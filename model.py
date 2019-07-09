@@ -94,8 +94,6 @@ class iCNN_Cell(torch.nn.Module):
             self.iCNN_Nodelist[i].set_upsample(self.up_size[i], self.up_mode[i])
             self.iCNN_Nodelist[i].set_downsample(self.down_size[i], self.down_stride[i])
 
-
-
     def forward(self, first_features):
 
         self.interlink_features = []
@@ -242,10 +240,10 @@ class FaceModel(torch.nn.Module):
 
         # Final Output
 
-        Final_Result = F.relu(self.last_conv1(output))
-        Final_Result = F.relu(self.last_conv2(Final_Result))
-        Final_Result = F.relu(self.last_conv3(Final_Result))
+        final_output = F.relu(self.last_conv1(output))
+        final_output = F.relu(self.last_conv2(final_output))
+        final_output = F.relu(self.last_conv3(final_output))
 
-        return Final_Result
+        return final_output
 
 
