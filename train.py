@@ -1,25 +1,47 @@
 from __future__ import print_function, division
-
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.optim import lr_scheduler
-import torchvision
-from torchvision import datasets, models, transforms
-
+import torch.nn.functional as F
+from torchvision import transforms
 from dataset import HelenDataset
 
 from Helen_transform import Resize, ToPILImage, ToTensor, Normalize, RandomRotation, \
                                 RandomResizedCrop, LabelsToOneHot
 import time
-import os
 import copy
+from distutils.version import LooseVersion
 import numpy as np
 
 from model import FaceModel
 
 import argparse
+
+
+def cross_entropy2d(input, target, weight=None, size_average=True):
+    # input: (n, c, h), target: (n, c, h)
+    n, c, h = input.size()
+
+
+    if LooseVersion(torch.__version__) < LooseVersion('0.3'):
+        # ==0.2.X
+        log_p = F.log_softmax(input)
+    else:
+        # >=0.3
+        log_p = F.log_softmax(input, dim=1)
+    # log_p: (n*h, c)
+    log_p = log_p.transpose(1, 2).transpose(2, 3).contiguous()
+    log_p = log_p[target.view(n, h, 1).repeat(1, 1, c) >= 0]
+    log_p = log_p.view(-1, c)
+    # target: (n*h*w,)
+    mask = target >= 0
+    target = target[mask]
+    loss = F.nll_loss(log_p, target, weight=weight, reduction='sum')
+    if size_average:
+        loss /= mask.data.sum()
+    return loss
 
 
 # Argument Parser Part
@@ -41,8 +63,9 @@ std = [0.282, 0.251, 0.238]
 model = FaceModel()
 optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=0.0)
 criterion = nn.CrossEntropyLoss()
+
 model = model.to(device)
-scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.5)
+scheduler = lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.5)
 criterion = criterion.to(device)
 
 # Dataset Read_in Part
@@ -124,9 +147,9 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
                 # track history if only in train
                 with torch.set_grad_enabled(phase == 'train'):
                     outputs = model(inputs)
-                    preds = outputs
-                    # _, preds = torch.max(outputs, 1)
-                    loss = criterion(outputs,  labels)
+                    _, preds = torch.max(outputs, dim=2)            # (N,c,h)  (10,9,64)
+                    _, ground_truth = torch.max(labels, dim=2)       # (N,c,h)  (10,9,64)
+                    loss = criterion(preds,  labels)
 
                     # backward + optimize only if in training phase
                     if phase == 'train':

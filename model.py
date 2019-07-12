@@ -83,9 +83,9 @@ class iCNN_Node(torch.nn.Module):
         x_out = F.conv2d(input=x_out,
                          weight=filters,
                          stride= 1,
-                        padding= 1
+                         padding= 1
                          )
-        y = F.relu(self.conv_node(x_out))
+        y = F.relu(self.conv_node(x_out),inplace=True)
         return y
 
 
@@ -193,7 +193,7 @@ class FaceModel(torch.nn.Module):
         # Parameters initiation
 
         # L:the number of label channels
-        self.lable_channel_size = 8
+        self.lable_channel_size = 9
 
         # Conv paramters
 
@@ -206,7 +206,6 @@ class FaceModel(torch.nn.Module):
         self.down_stride = 2
         self.down_size = 3
         self.up_size = 2
-
         # Parameters for each icnn_node in iCNNnodelist
 
         self.kernel_sizes_list = [self.kernel_size for _ in range(self.recurrent_number)]
@@ -218,6 +217,8 @@ class FaceModel(torch.nn.Module):
         self.up_size_list = [self.up_size for _ in range(self.recurrent_number)]
 
         self.first_channels_size = [8*(i+1) for i in range(self.recurrent_number)]                     # [8,16,24,32]
+        # Relu layer
+        self.relu_layer = nn.ReLU(inplace=True)
 
         # Input layer
         self.input_conv = nn.ModuleList([nn.Conv2d(in_channels=self.in_channels,
@@ -263,9 +264,12 @@ class FaceModel(torch.nn.Module):
                                     stride=1,
                                     padding=self.last_kernel_size//2)
 
+        # SoftMax layer
+        # self.softmax_layer = nn.Softmax2d()
+
     def forward(self, x):
 
-        #Scale the input
+        # Scale the input
         # After this scaled_x = Scaleed image of [row1,row2,row3,row4]
         scaled_x = []
         scaled_x.append(x)
@@ -278,9 +282,9 @@ class FaceModel(torch.nn.Module):
         # convolve and output feature maps
         # After this inputs = feature maps of [row1,row2,row3,row4]
 
-        inputs = [F.relu(self.input_conv[0](scaled_x[0]))]
+        inputs = [self.relu_layer(self.input_conv[0](scaled_x[0]))]
         for i in range(1, self.recurrent_number):
-            temp_i = F.relu(self.input_conv[i](scaled_x[i]))
+            temp_i = self.relu_layer(self.input_conv[i](scaled_x[i]))
             inputs.append(temp_i)
 
         # Step forward for each interlinking layer
@@ -293,10 +297,10 @@ class FaceModel(torch.nn.Module):
 
         # Final Output
 
-        final_output = F.relu(self.last_conv1(output))
-        final_output = F.relu(self.last_conv2(final_output))
-        final_output = F.relu(self.last_conv3(final_output))
-        final_output = F.softmax(final_output)
+        final_output = self.relu_layer(self.last_conv1(output))
+        final_output = self.relu_layer(self.last_conv2(final_output))
+        final_output = self.relu_layer(self.last_conv3(final_output))
+        # final_output = self.softmax_layer(final_output)
 
         return final_output
 
