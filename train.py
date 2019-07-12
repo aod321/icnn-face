@@ -8,8 +8,10 @@ from torch.optim import lr_scheduler
 import torchvision
 from torchvision import datasets, models, transforms
 
-from dataset import HelenDataset,Rescale,ToTensor
+from dataset import HelenDataset
 
+from Helen_transform import Resize, ToPILImage, ToTensor, Normalize, RandomRotation, \
+                                RandomResizedCrop, LabelsToOneHot
 import time
 import os
 import copy
@@ -31,7 +33,11 @@ print(args)
 # Initiation Part
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+# Initiation For Normalize (calculated by mean_std_calc.py)
+mean = [0.369, 0.314, 0.282]
+std = [0.282, 0.251, 0.238]
 
+# model initiation
 model = FaceModel()
 optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=0.0)
 criterion = nn.CrossEntropyLoss()
@@ -40,16 +46,40 @@ scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.5)
 criterion = criterion.to(device)
 
 # Dataset Read_in Part
+# root_dir = "/data1/yinzi/datas"
+root_dir = '/home/yinzi/Downloads/datas'
 
 txt_file_names = {
     'train': "exemplars.txt",
     'val': "tuning.txt"
 }
 
+transforms_list = {
+    'train':
+        transforms.Compose([
+            ToPILImage(),
+            RandomRotation(15),
+            RandomResizedCrop((255, 255), scale=(0.9, 1.1)),
+            Resize((64, 64)),
+            ToTensor(),
+            LabelsToOneHot(),
+            Normalize(mean=mean,
+                      std=std)
+        ]),
+    'val':
+        transforms.Compose([
+            ToPILImage(),
+            Resize((64, 64)),
+            ToTensor(),
+            LabelsToOneHot(),
+            Normalize(mean=mean,
+                      std=std)
+        ])
+}
+
 image_datasets = {x: HelenDataset(txt_file=txt_file_names[x],
-                                  root_dir='/home/yinzi/Downloads/datas',
-                                  transform=transforms.Compose([Rescale((64,64)),
-                                                                ToTensor()])
+                                  root_dir=root_dir,
+                                  transform=transforms_list[x]
                                   )
                   for x in ['train', 'val']}
 
@@ -86,6 +116,7 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
             # Iterate over data.
             for i, batch in enumerate(dataloaders[phase]):
                 inputs, labels = batch['image'].to(device), batch['labels'].to(device)
+                inputs, labels = inputs.float(), labels.float()
                 # zero the parameter gradients
                 optimizer.zero_grad()
 
@@ -129,9 +160,7 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
     return model
 
 
-def weights_init(input):
-    if isinstance(input,nn.Conv2d):
-        nn.init.xavier_normal_(input.weight.data)
+
 
 # Start Train
 

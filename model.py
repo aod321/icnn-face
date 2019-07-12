@@ -1,6 +1,19 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+
+class Interpolate(nn.Module):
+    def __init__(self, size, mode):
+        super(Interpolate, self).__init__()
+        self.interp = nn.functional.interpolate
+        self.size = size
+        self.mode = mode
+
+    def forward(self, x):
+        x = self.interp(x, size=self.size, mode=self.mode)
+        return x
 
 
 class iCNN_Node(torch.nn.Module):
@@ -16,6 +29,7 @@ class iCNN_Node(torch.nn.Module):
 
         self.interpol_size = 3
         self.interpol_mode = 'nearest'
+        self.interp_layer = Interpolate(size=self.interpol_size, mode=self.interpol_mode)
 
         self.pool_size = 3
         self.pool_stride = 1
@@ -36,6 +50,7 @@ class iCNN_Node(torch.nn.Module):
     def set_upsample(self, interpol_size, interpol_mode='nearest'):
         self.interpol_size = interpol_size
         self.interpol_mode = interpol_mode
+        self.interp_layer = Interpolate(size=self.interpol_size, mode=self.interpol_mode)
 
     def set_downsample(self, pool_size, pool_stride):
 
@@ -43,23 +58,34 @@ class iCNN_Node(torch.nn.Module):
         self.pool_stride = pool_stride
 
     def upsample(self, x):
-        result = F.interpolate(x, scale_factor=self.interpol_size,mode=self.interpol_mode)
+        result = self.interp_layer(x)
         return result
 
     def downsample(self, x):
-        result = F.max_pool2d(x,kernel_size=self.pool_size,stride=self.pool_stride,padding=1)
+        result = F.max_pool2d(x,kernel_size=self.pool_size, stride=self.pool_stride,padding=1)
         return result
 
     def forward(self, x, feature_from_pre, feature_from_post):
-
         # Downsample the features from the pre-node
         feature_from_pre = self.downsample(feature_from_pre)
         # Upsample the features from the post-node
         feature_from_post = self.upsample(feature_from_post)
-        # Interlink them before convolution
-        x = feature_from_pre + x + feature_from_post
 
-        y = F.relu(self.conv_node(x))
+        # cuda support
+        feature_from_pre = feature_from_pre.to(device)
+        feature_from_post = feature_from_post.to(device)
+        x = x.to(device)
+
+        # Interlink them before convolution
+        # Use Conv2d whose weight is all 1 to compute  x = feature_from_pre + x + feature_from_post
+        x_out = torch.cat([feature_from_pre, x, feature_from_post], dim=1)
+        filters = torch.ones((x.shape[1], x_out.shape[1], 3, 3)).to(device)
+        x_out = F.conv2d(input=x_out,
+                         weight=filters,
+                         stride= 1,
+                        padding= 1
+                         )
+        y = F.relu(self.conv_node(x_out))
         return y
 
 
@@ -98,18 +124,22 @@ class iCNN_Cell(torch.nn.Module):
 
         self.interlink_features = []
 
-        # Step forward for each interlinking node
-        #
-        # Compute the head node firstly, since it doesn't has any front nodes.
+        # Set upsample size
+        for i in range(self.recurrent_number):
+            self.iCNN_Nodelist[i].set_upsample(interpol_size=(first_features[i].shape[2],
+                                                              first_features[i].shape[3])
+                                               )
 
-        zeros_tensor = torch.zeros(first_features[0].shape)
-        temp_feature = self.iCNN_Nodelist[0](first_features[0],
-                                             feature_from_pre=zeros_tensor,
-                                             feature_from_post=first_features[1])
+        # Step forward for each interlinking node
+        # Compute the head node firstly, since it doesn't has any front nodes.
+        zeros_shape = torch.Size(torch.tensor(first_features[0].shape) * torch.tensor([1, 1, 2, 2]))
+        zeros_tensor = torch.zeros(zeros_shape)
+        now_node = self.iCNN_Nodelist[0]
+        temp_feature = now_node(first_features[0],feature_from_pre=zeros_tensor,
+                                feature_from_post=first_features[1])
         self.interlink_features.append(temp_feature)
 
         # Then compute all the middle interlinked nodes
-
         for i in range(1,self.recurrent_number-1):
             temp_feature = self.iCNN_Nodelist[i](first_features[i],
                                                  feature_from_pre=first_features[i-1],
@@ -130,10 +160,27 @@ class iCNN_Cell(torch.nn.Module):
     def get_output_integration(self):
         # copy origin interlink_features list to temp
         temp_feature = self.interlink_features[:]
+
         # i from N-1 to 1
         for i in range(self.recurrent_number - 1, 0, -1):
-            temp_feature[i-1] += self.iCNN_Nodelist[i].upsample(temp_feature[i])
 
+            node_pre = self.iCNN_Nodelist[i-1]
+            node_now = self.iCNN_Nodelist[i]
+            feature_pre = temp_feature[i-1].to(device)
+            feature_now = temp_feature[i].to(device)
+            feature_to_pre = node_pre.upsample(feature_now)
+
+            # cat feature_pre and feature_to_pre
+            cat_feature = torch.cat([feature_pre, feature_to_pre],
+                                    dim=1)
+
+            # Use conv2d to compute  feature_pre += feature_to_pre
+            filters = torch.ones((feature_pre.shape[1], cat_feature.shape[1], 3, 3)).to(device)
+            temp_feature[i - 1] = F.conv2d(input=cat_feature,
+                                           weight=filters,
+                                           stride=1,
+                                           padding=1
+                                           )
         return temp_feature[0]
 
 
@@ -218,20 +265,26 @@ class FaceModel(torch.nn.Module):
 
     def forward(self, x):
 
+        #Scale the input
+        # After this scaled_x = Scaleed image of [row1,row2,row3,row4]
+        scaled_x = []
+        scaled_x.append(x)
+
+        for i in range(1, self.recurrent_number):
+            x = F.max_pool2d(x, kernel_size=3, stride=2, padding=1)
+            scaled_x.append(x)
+
         # batch,c,h,w = x.shape
-        # Scale, convolve and output feature maps
+        # convolve and output feature maps
         # After this inputs = feature maps of [row1,row2,row3,row4]
 
-        scaled_x = x
-        inputs = [F.relu(self.input_conv[0](scaled_x))]
+        inputs = [F.relu(self.input_conv[0](scaled_x[0]))]
         for i in range(1, self.recurrent_number):
-            scaled_x = F.max_pool2d(scaled_x, kernel_size=3, stride=2, padding=1)
-            scaled_x = F.relu(self.input_conv[i](scaled_x))
-            inputs.append(scaled_x)
+            temp_i = F.relu(self.input_conv[i](scaled_x[i]))
+            inputs.append(temp_i)
 
         # Step forward for each interlinking layer
         # After this inputs = feature maps of [row1,row2,row3,row4] after interlinking layer
-
         for i in range(self.interlink_layer_number):
             inputs = self.interlink_layers[i](inputs)
 
@@ -243,6 +296,7 @@ class FaceModel(torch.nn.Module):
         final_output = F.relu(self.last_conv1(output))
         final_output = F.relu(self.last_conv2(final_output))
         final_output = F.relu(self.last_conv3(final_output))
+        final_output = F.softmax(final_output)
 
         return final_output
 
