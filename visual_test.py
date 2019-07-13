@@ -8,7 +8,7 @@ from torchvision.transforms import functional as TF
 from dataset import HelenDataset
 
 from Helen_transform import Resize, ToPILImage, ToTensor, Normalize, RandomRotation, \
-                                RandomResizedCrop, LabelsToOneHot
+                                RandomResizedCrop
 
 from visualize import random_colors, apply_mask, tensor_unnormalize, ndarray_imshow, imshow
 
@@ -23,7 +23,6 @@ face_dataset = HelenDataset(txt_file='exemplars.txt',
                                 RandomResizedCrop((255, 255), scale=(0.9, 1.1)),
                                 Resize((64, 64)),
                                 ToTensor(),
-                                LabelsToOneHot(),
                                 Normalize(mean=[0.369, 0.314, 0.282],
                                           std=[0.282, 0.251, 0.238])
                             ])

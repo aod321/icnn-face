@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
@@ -24,7 +25,7 @@ class iCNN_Node(torch.nn.Module):
         self.in_channels = 3
         self.out_channels = 32
         self.kernel_size = 3
-        self.stride = self.kernel_size//2
+        self.stride = self.kernel_size // 2
         self.padding = 1
 
         self.interpol_size = 3
@@ -62,30 +63,44 @@ class iCNN_Node(torch.nn.Module):
         return result
 
     def downsample(self, x):
-        result = F.max_pool2d(x,kernel_size=self.pool_size, stride=self.pool_stride,padding=1)
+        result = F.max_pool2d(x, kernel_size=self.pool_size, stride=self.pool_stride, padding=1)
         return result
 
     def forward(self, x, feature_from_pre, feature_from_post):
-        # Downsample the features from the pre-node
-        feature_from_pre = self.downsample(feature_from_pre)
-        # Upsample the features from the post-node
-        feature_from_post = self.upsample(feature_from_post)
 
-        # cuda support
-        feature_from_pre = feature_from_pre.to(device)
-        feature_from_post = feature_from_post.to(device)
         x = x.to(device)
+        if feature_from_pre is not None and feature_from_post is not None:
+            # Downsample the features from the pre-node
+            feature_from_pre = self.downsample(feature_from_pre)
+            # Upsample the features from the post-node
+            feature_from_post = self.upsample(feature_from_post)
+            # cuda support
+            feature_from_pre = feature_from_pre.to(device)
+            feature_from_post = feature_from_post.to(device)
 
-        # Interlink them before convolution
-        # Use Conv2d whose weight is all 1 to compute  x = feature_from_pre + x + feature_from_post
-        x_out = torch.cat([feature_from_pre, x, feature_from_post], dim=1)
-        filters = torch.ones((x.shape[1], x_out.shape[1], 3, 3)).to(device)
-        x_out = F.conv2d(input=x_out,
-                         weight=filters,
-                         stride= 1,
-                         padding= 1
-                         )
-        y = F.relu(self.conv_node(x_out),inplace=True)
+            # Interlink them before convolution
+            # Use Conv2d whose weight is all 1 to compute  x = feature_from_pre + x + feature_from_post
+            x_out = torch.cat([feature_from_pre, x, feature_from_post], dim=1)
+        else:
+            if feature_from_pre is None and feature_from_post is None:
+                x_out = x
+            else:
+                if feature_from_pre is None:
+                    feature_from_post = self.upsample(feature_from_post)
+                    x_out = torch.cat([x, feature_from_post], dim=1)
+
+                else:  # feature_from_post is None:
+                    feature_from_pre = self.downsample(feature_from_pre)
+                    x_out = torch.cat([feature_from_pre, x], dim=1)
+
+        filters = (torch.ones((x.shape[1], x_out.shape[1], 3, 3)).to(device))
+        x_out = torch.tanh(F.conv2d(input=x_out,
+                                weight=filters,
+                                stride=1,
+                                padding=1
+                                )
+                       )
+        y = torch.tanh(self.conv_node(x_out))
         return y
 
 
@@ -132,27 +147,25 @@ class iCNN_Cell(torch.nn.Module):
 
         # Step forward for each interlinking node
         # Compute the head node firstly, since it doesn't has any front nodes.
-        n, c, h, w = first_features[0].size()
-        zeros_tensor = torch.zeros((n, c, 2 * h, 2 * w))
         now_node = self.iCNN_Nodelist[0]
-        temp_feature = now_node(first_features[0],feature_from_pre=zeros_tensor,
+        temp_feature = now_node(first_features[0], feature_from_pre=None,
                                 feature_from_post=first_features[1])
         self.interlink_features.append(temp_feature)
 
         # Then compute all the middle interlinked nodes
-        for i in range(1,self.recurrent_number-1):
+        for i in range(1, self.recurrent_number - 1):
             temp_feature = self.iCNN_Nodelist[i](first_features[i],
-                                                 feature_from_pre=first_features[i-1],
-                                                 feature_from_post=first_features[i+1])
+                                                 feature_from_pre=first_features[i - 1],
+                                                 feature_from_post=first_features[i + 1])
             self.interlink_features.append(temp_feature)
 
         # Finally handle the tail node, as it doesn't has any next nodes.
 
-        j = self.recurrent_number-1
-        zeros_tensor = torch.zeros(first_features[j].shape)
-        temp_feature = self.iCNN_Nodelist[j](first_features[j],
-                                             feature_from_pre=first_features[j-1],
-                                             feature_from_post=zeros_tensor)
+        j = self.recurrent_number - 1
+        now_node = self.iCNN_Nodelist[j]
+        temp_feature = now_node(first_features[j],
+                                feature_from_pre=first_features[j - 1],
+                                feature_from_post=None)
         self.interlink_features.append(temp_feature)
 
         return self.interlink_features
@@ -163,10 +176,8 @@ class iCNN_Cell(torch.nn.Module):
 
         # i from N-1 to 1
         for i in range(self.recurrent_number - 1, 0, -1):
-
-            node_pre = self.iCNN_Nodelist[i-1]
-            node_now = self.iCNN_Nodelist[i]
-            feature_pre = temp_feature[i-1].to(device)
+            node_pre = self.iCNN_Nodelist[i - 1]
+            feature_pre = temp_feature[i - 1].to(device)
             feature_now = temp_feature[i].to(device)
             feature_to_pre = node_pre.upsample(feature_now)
 
@@ -176,11 +187,12 @@ class iCNN_Cell(torch.nn.Module):
 
             # Use conv2d to compute  feature_pre += feature_to_pre
             filters = torch.ones((feature_pre.shape[1], cat_feature.shape[1], 3, 3)).to(device)
-            temp_feature[i - 1] = F.conv2d(input=cat_feature,
-                                           weight=filters,
-                                           stride=1,
-                                           padding=1
+            temp_feature[i - 1] = torch.tanh(F.conv2d(input=cat_feature,
+                                                  weight=filters,
+                                                  stride=1,
+                                                  padding=1
                                            )
+                                         )
         return temp_feature[0]
 
 
@@ -210,13 +222,13 @@ class FaceModel(torch.nn.Module):
 
         self.kernel_sizes_list = [self.kernel_size for _ in range(self.recurrent_number)]
         self.stride_list = [1 for i in range(self.recurrent_number)]
-        self.padding_list = [self.kernel_size//2 for _ in range(self.recurrent_number)]
+        self.padding_list = [self.kernel_size // 2 for _ in range(self.recurrent_number)]
 
         self.down_size_list = [self.down_size for _ in range(self.recurrent_number)]
         self.down_stride_list = [self.down_stride for _ in range(self.recurrent_number)]
         self.up_size_list = [self.up_size for _ in range(self.recurrent_number)]
 
-        self.first_channels_size = [8*(i+1) for i in range(self.recurrent_number)]                     # [8,16,24,32]
+        self.first_channels_size = [8 * (i + 1) for i in range(self.recurrent_number)]  # [8,16,24,32]
         # Relu layer
         self.relu_layer = nn.ReLU(inplace=True)
 
@@ -225,10 +237,10 @@ class FaceModel(torch.nn.Module):
                                                    out_channels=self.first_channels_size[i],
                                                    kernel_size=self.kernel_size,
                                                    stride=1,
-                                                   padding=self.kernel_size//2)
+                                                   padding=self.kernel_size // 2)
                                          for i in range(self.recurrent_number)
-                                           ]
-                                          )
+                                         ]
+                                        )
 
         # interlink_layer0 interlink_layer1 interlink_layer2
 
@@ -241,28 +253,28 @@ class FaceModel(torch.nn.Module):
                                                          down_size=self.down_size_list,
                                                          down_stride=self.down_stride_list,
                                                          up_size=self.up_size_list)
-                                              for _ in range(self.interlink_layer_number)
-                                              ]
-                                             )
+                                               for _ in range(self.interlink_layer_number)
+                                               ]
+                                              )
 
         # last conv layer1     input channels:8     output channels:2L+8
         self.last_conv1 = nn.Conv2d(in_channels=self.first_channels_size[0],
                                     out_channels=2 * self.lable_channel_size + 8,
-                                    kernel_size=self.kernel_size,stride=1,
-                                    padding=self.kernel_size//2)
+                                    kernel_size=self.kernel_size, stride=1,
+                                    padding=self.kernel_size // 2)
 
         # last conv layer2     input channels:2L+8  output channels:L channels
         self.last_conv2 = nn.Conv2d(in_channels=2 * self.lable_channel_size + 8,
                                     out_channels=self.lable_channel_size,
-                                    kernel_size=self.kernel_size,stride=1,
-                                    padding=self.kernel_size//2)
+                                    kernel_size=self.kernel_size, stride=1,
+                                    padding=self.kernel_size // 2)
 
         # last conv layer3     input channels:L  output channels:L channels
         self.last_conv3 = nn.Conv2d(in_channels=self.lable_channel_size,
                                     out_channels=self.lable_channel_size,
                                     kernel_size=self.last_kernel_size,
                                     stride=1,
-                                    padding=self.last_kernel_size//2)
+                                    padding=self.last_kernel_size // 2)
 
         # SoftMax layer
         self.softmax_layer = nn.Softmax2d()
@@ -281,7 +293,6 @@ class FaceModel(torch.nn.Module):
         # batch,c,h,w = x.shape
         # convolve and output feature maps
         # After this inputs = feature maps of [row1,row2,row3,row4]
-
         inputs = [self.relu_layer(self.input_conv[0](scaled_x[0]))]
         for i in range(1, self.recurrent_number):
             temp_i = self.relu_layer(self.input_conv[i](scaled_x[i]))
@@ -300,7 +311,7 @@ class FaceModel(torch.nn.Module):
         final_output = self.relu_layer(self.last_conv1(output))
         final_output = self.relu_layer(self.last_conv2(final_output))
         final_output = self.relu_layer(self.last_conv3(final_output))
-        final_output = self.softmax_layer(final_output)
+        # final_output = self.softmax_layer(final_output)
 
         return final_output
 

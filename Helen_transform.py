@@ -83,8 +83,7 @@ class ToTensor(transforms.ToTensor):
         labels = [TF.to_tensor(labels[r])
                   for r in range(len(labels))
                   ]
-
-        labels = torch.cat(labels)
+        labels = torch.cat(labels, dim=0)
 
         return {'image': TF.to_tensor(image),
                 'labels': labels
@@ -108,6 +107,8 @@ class Normalize(transforms.Normalize):
         """
 
         image_tensor, labels_tensor = sample['image'], sample['labels']
+
+
 
         sample = {'image': TF.normalize(image_tensor, self.mean, self.std, self.inplace),
                   'labels': labels_tensor
@@ -146,7 +147,6 @@ class RandomRotation(transforms.RandomRotation):
 
         return sample
 
-
 class RandomResizedCrop(transforms.RandomResizedCrop):
     """Crop the given PIL Image to random size and aspect ratio.
 
@@ -177,35 +177,29 @@ class RandomResizedCrop(transforms.RandomResizedCrop):
         return sample
 
 
-class LabelsToOneHot(object):
+class CenterCrop(transforms.CenterCrop):
+    """CenterCrop the given PIL Image to random size and aspect ratio.
 
-    """Convert Labels to one hot
-
+        Override the __call__ of transforms.CenterCrop
     """
 
     def __call__(self, sample):
         """
-             Args:
-                 sample:{'image':PIL Image,'labels':labels to be converted}
+        Args:
+            img (PIL Image): Image to be cropped and resized.
 
-             Returns:
-                 sample:{'image':Not change ,'labels': one hot Tensors for labels}
-
+        Returns:
+            PIL Image: Randomly cropped and resized image.
         """
         img, labels = sample['image'], sample['labels']
 
-        # Convert label to one-hot
-        one_hot = labels.numpy()
+        croped_img = TF.center_crop(img, self.size)
+        croped_labels = [TF.center_crop(labels[r], self.size)
+                         for r in range(len(labels))
+                         ]
 
-        for j in range(one_hot.shape[0]):
-            one_hot[j, :, :] = np.where(one_hot[j, :, :] != 0,
-                                          1,
-                                          one_hot[j, :, :]
-                                       )
-
-        one_hot = torch.from_numpy(one_hot)
-        sample = {'image': img,
-                  'labels': one_hot
+        sample = {'image': croped_img,
+                  'labels': croped_labels
                   }
 
         return sample

@@ -52,6 +52,7 @@ def tensor_unnormalize(inp):
     # Input : Tensor array
     # 0utput : numpy array
     inp = inp.numpy().transpose((1, 2, 0))
+
     mean = np.array([0.369, 0.314, 0.282])
     std = np.array([0.282, 0.251, 0.238])
     inp = std * inp + mean
@@ -70,8 +71,11 @@ def ndarray_unnormalize(inp):
 
 def tensor_imshow(inp, title=None):
     """Imshow for Tensor."""
-    inp = tensor_unnormalize(inp)
-    plt.imshow(inp)
+    temp = inp.clone()
+    temp = temp.detach().to('cpu')
+    
+    # temp = tensor_unnormalize(temp)
+    plt.imshow(temp)
     if title is not None:
         plt.title(title)
     plt.pause(0.001)  # pause a bit so that plots are updated
