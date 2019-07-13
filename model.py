@@ -132,8 +132,8 @@ class iCNN_Cell(torch.nn.Module):
 
         # Step forward for each interlinking node
         # Compute the head node firstly, since it doesn't has any front nodes.
-        zeros_shape = torch.Size(torch.tensor(first_features[0].shape) * torch.tensor([1, 1, 2, 2]))
-        zeros_tensor = torch.zeros(zeros_shape)
+        n, c, h, w = first_features[0].size()
+        zeros_tensor = torch.zeros((n, c, 2 * h, 2 * w))
         now_node = self.iCNN_Nodelist[0]
         temp_feature = now_node(first_features[0],feature_from_pre=zeros_tensor,
                                 feature_from_post=first_features[1])
@@ -265,7 +265,7 @@ class FaceModel(torch.nn.Module):
                                     padding=self.last_kernel_size//2)
 
         # SoftMax layer
-        # self.softmax_layer = nn.Softmax2d()
+        self.softmax_layer = nn.Softmax2d()
 
     def forward(self, x):
 
@@ -300,7 +300,7 @@ class FaceModel(torch.nn.Module):
         final_output = self.relu_layer(self.last_conv1(output))
         final_output = self.relu_layer(self.last_conv2(final_output))
         final_output = self.relu_layer(self.last_conv3(final_output))
-        # final_output = self.softmax_layer(final_output)
+        final_output = self.softmax_layer(final_output)
 
         return final_output
 

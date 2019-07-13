@@ -20,20 +20,23 @@ from model import FaceModel
 import argparse
 
 
+# class Cross_entropy2D
+
+
+
 def cross_entropy2d(input, target, weight=None, size_average=True):
-    # input: (n, c, h), target: (n, c, h)
-    n, c, h = input.size()
-
-
+    # input: (n, c, h, w), target: (n, h, w)
+    n, c, h, w = input.size()
+    # log_p: (n, c, h, w)
     if LooseVersion(torch.__version__) < LooseVersion('0.3'):
         # ==0.2.X
-        log_p = F.log_softmax(input)
+        log_p = F.softmax(input)
     else:
         # >=0.3
-        log_p = F.log_softmax(input, dim=1)
-    # log_p: (n*h, c)
-    log_p = log_p.transpose(1, 2).transpose(2, 3).contiguous()
-    log_p = log_p[target.view(n, h, 1).repeat(1, 1, c) >= 0]
+        log_p = F.softmax(input, dim=1)
+    # log_p: (n*h*w, c)
+    log_p.view
+    log_p = log_p[target > 0]
     log_p = log_p.view(-1, c)
     # target: (n*h*w,)
     mask = target >= 0
@@ -43,12 +46,12 @@ def cross_entropy2d(input, target, weight=None, size_average=True):
         loss /= mask.data.sum()
     return loss
 
-
 # Argument Parser Part
 parser = argparse.ArgumentParser()
-parser.add_argument("--batch_size",default=10,type=int,help="Batch size to use during training")
-parser.add_argument("--lr",default=0.01,type=float,help="Learning rate for optimizer")
-parser.add_argument("--epochs",default=10,type=int,help="Number of epochs to train")
+parser.add_argument("--batch_size", default=50, type=int, help="Batch size to use during training")
+parser.add_argument("--df", default=10, type=float, help="Display frequency")
+parser.add_argument("--lr", default=0.01, type=float, help="Learning rate for optimizer")
+parser.add_argument("--epochs", default=10, type=int, help="Number of epochs to train")
 args = parser.parse_args()
 print(args)
 
@@ -62,7 +65,9 @@ std = [0.282, 0.251, 0.238]
 # model initiation
 model = FaceModel()
 optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=0.0)
-criterion = nn.CrossEntropyLoss()
+
+# Binary CrossEntropyLoss
+criterion = nn.BCELoss()
 
 model = model.to(device)
 scheduler = lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.5)
@@ -119,7 +124,7 @@ dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'val']}
 def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
     since = time.time()
     best_model_wts = copy.deepcopy(model.state_dict())
-    best_acc = 0.0
+    best_loss = 0.0
 
     for epoch in range(num_epochs):
         print('Epoch {}/{}'.format(epoch, num_epochs - 1))
@@ -146,29 +151,33 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
                 # forward
                 # track history if only in train
                 with torch.set_grad_enabled(phase == 'train'):
-                    outputs = model(inputs)
-                    _, preds = torch.max(outputs, dim=2)            # (N,c,h)  (10,9,64)
-                    _, ground_truth = torch.max(labels, dim=2)       # (N,c,h)  (10,9,64)
-                    loss = criterion(preds,  labels)
+                    outputs = model(inputs).to(device)
+
+                    loss = criterion(outputs,  labels)
 
                     # backward + optimize only if in training phase
                     if phase == 'train':
                         loss.backward()
                         optimizer.step()
 
+                if i % args.df == 0:
+                    time_now = time.time() - since
+                    print('Mode:{} Batch:{}  Loss: {:.4f}'.format(
+                        phase, i, loss))
+
                 # statistics
                 running_loss += loss.item() * inputs.size(0)
-                running_corrects += torch.sum(preds == labels.data)
+                # running_corrects += torch.sum(preds == labels.data)
 
             epoch_loss = running_loss / dataset_sizes[phase]
-            epoch_acc = running_corrects.double() / dataset_sizes[phase]
+            # epoch_acc = running_corrects.double() / dataset_sizes[phase]
 
-            print('{} Loss: {:.4f} Acc: {:.4f}'.format(
-                phase, epoch_loss, epoch_acc))
+            print('{} Epoch Loss: {:.4f}'.format(
+                phase, epoch_loss))
 
             # deep copy the model
-            if phase == 'val' and epoch_acc > best_acc:
-                best_acc = epoch_acc
+            if phase == 'val' and epoch_loss < best_loss:
+                best_loss = epoch_loss
                 best_model_wts = copy.deepcopy(model.state_dict())
 
         print()
@@ -176,7 +185,7 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
     time_elapsed = time.time() - since
     print('Training complete in {:.0f}m {:.0f}s'.format(
         time_elapsed // 60, time_elapsed % 60))
-    print('Best val Acc: {:4f}'.format(best_acc))
+    print('Best val Loss: {:4f}'.format(best_loss))
 
     # load best model weights
     model.load_state_dict(best_model_wts)
