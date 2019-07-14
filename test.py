@@ -4,7 +4,7 @@ from utils import LOG_INFO
 from dataset import HelenDataset
 from torch.utils.data import DataLoader
 from torchvision import transforms, utils
-from es_model import ICNN
+# from es_model import ICNN
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt

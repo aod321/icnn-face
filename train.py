@@ -1,53 +1,30 @@
-from __future__ import print_function, division
+from template import TemplateModel
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader
-from torch.optim import lr_scheduler
-import torch.nn.functional as F
-from torchvision import transforms
-from dataset import HelenDataset
-
-from Helen_transform import Resize, ToPILImage, ToTensor, Normalize, RandomRotation, \
-                                RandomResizedCrop, CenterCrop
-import time
-import copy
-from distutils.version import LooseVersion
-import numpy as np
-
 from model import FaceModel
-
-from visualize import tensor_imshow
+from torch.utils.data import DataLoader
+from dataset import HelenDataset
+from Helen_transform import Resize, ToPILImage, ToTensor, Normalize, RandomRotation, \
+                                RandomResizedCrop, CenterCrop, LabelsToOneHot
+from torchvision import transforms
 import argparse
 
+from tensorboardX import SummaryWriter
 
-# Argument Parser Part
 parser = argparse.ArgumentParser()
-parser.add_argument("--batch_size", default=50, type=int, help="Batch size to use during training")
-parser.add_argument("--df", default=10, type=float, help="Display frequency")
+parser.add_argument("--batch_size", default=10, type=int, help="Batch size to use during training.")
+parser.add_argument("--display_freq", default=10, type=int, help="Display frequency")
 parser.add_argument("--lr", default=0.01, type=float, help="Learning rate for optimizer")
-parser.add_argument("--epochs", default=1000, type=int, help="Number of epochs to train")
+parser.add_argument("--epochs", default=10, type=int, help="Number of epochs to train")
+parser.add_argument("--eval_per_epoch", default=1, type=int, help="eval_per_epoch ")
 args = parser.parse_args()
 print(args)
 
-# Initiation Part
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # Initiation For Normalize (calculated by mean_std_calc.py)
 mean = [0.369, 0.314, 0.282]
 std = [0.282, 0.251, 0.238]
-
-# model initiation
-model = FaceModel()
-# optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=0.0)
-optimizer = optim.Adam(model.parameters(), lr=args.lr)
-criterion = nn.CrossEntropyLoss()
-# criterion = nn.CrossEntropyLoss()
-criterion = nn.BCEWithLogitsLoss()
-
-model = model.to(device)
-scheduler = lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.5)
-criterion = criterion.to(device)
 
 # Dataset Read_in Part
 # root_dir = "/data1/yinzi/datas"
@@ -62,7 +39,11 @@ transforms_list = {
     'train':
         transforms.Compose([
             ToPILImage(),
+            RandomRotation(15),
+            RandomResizedCrop((200, 200), scale=(0.9, 1.1)),
+            CenterCrop((128,128)),
             Resize((64, 64)),
+            LabelsToOneHot(),
             ToTensor(),
             Normalize(mean=mean,
                       std=std)
@@ -71,6 +52,7 @@ transforms_list = {
         transforms.Compose([
             ToPILImage(),
             Resize((64, 64)),
+            LabelsToOneHot(),
             ToTensor(),
             Normalize(mean=mean,
                       std=std)
@@ -90,86 +72,94 @@ dataloaders = {x: DataLoader(image_datasets[x], batch_size=args.batch_size,
 dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'val']}
 
 
-# Training part
+class TrainModel(TemplateModel):
+
+    def __init__(self , argus = args):
+        super(TrainModel, self).__init__()
+        self.label_channels = 9
+        # ============== not neccessary ===============
+        self.train_logger = None
+        self.eval_logger = None
+        self.args = argus
+
+        # ============== neccessary ===============
+        self.writer = SummaryWriter('log')
+        self.step = 0
+        self.epoch = 0
+        self.best_error = float('Inf')
+
+        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+        self.model = FaceModel()
+        self.model = self.model.to(self.device)
+        self.optimizer = optim.Adam(self.model.parameters(), self.args.lr)
+        self.criterion = nn.BCEWithLogitsLoss()
+        self.metric = nn.BCEWithLogitsLoss()
+
+        self.train_loader = dataloaders['train']
+        self.eval_loader = dataloaders['val']
+
+        self.ckpt_dir = "checkpoints"
+        self.display_freq = 10
 
 
-def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
-    since = time.time()
-    best_model_wts = copy.deepcopy(model.state_dict())
-    best_loss = 99999
 
-    for epoch in range(num_epochs):
-        print('Epoch {}/{}'.format(epoch, num_epochs - 1))
-        print('-' * 10)
+        # call it to check all members have been intiated
+        self.check_init()
 
-        # Each epoch has a training and validation phase
-        phase = 'train'
-        for phase in ['train', 'val']:
-            if phase == 'train':
-                scheduler.step()
-                model.train()  # Set model to training moddataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'val']}e
-            else:
-                model.eval()  # Set model to evaluate mode
+    def train_loss(self, batch):
+        x, y = batch['image'].float(), batch['labels'].float()
 
-            running_loss = 0.0
-            running_corrects = 0
+        x = x.to(self.device)
+        y = y.to(self.device)
 
-            # Iterate over data.
-            for i, batch in enumerate(dataloaders[phase]):
-                inputs, labels = batch['image'].to(device), batch['labels'].to(device)
-                inputs, labels = inputs.float(), labels.float()
-                # zero the parameter gradients
-                optimizer.zero_grad()
+        pred = self.model(x)
+        loss = 0.0
+        for r in range(self.label_channels):
+            loss += self.criterion(pred[:, r, :, :], y[:, r, :, :])
+        # loss /= self.args.batch_size
+        return loss, None
 
-                # forward
-                # track history if only in train
-                with torch.set_grad_enabled(phase == 'train'):
-                    outputs = model(inputs)
-                    loss = 0.0
-                    for r in range(9):
-                        loss += criterion(outputs[:, r, :, :], labels[:, r, :, :])
+    # iters x batch_size x channel x h x w
+    def eval_loss(self, preds, ys):
+        loss_list = []
+        iters = len(self.eval_loader)
+        for i in range(iters):
+            loss = 0.0
+            for r in range(self.label_channels):
+                loss += self.metric(preds[i, :, r, :, :], ys[i, :, r, :, :])
+            # loss /= self.args.batch_size
+            loss_list.append(loss)
+        cost = sum(loss_list)/iters
 
-                        # backward + optimize only if in training phase
-                    if phase == 'train':
-                        loss.backward()
-                        optimizer.step()
+        return cost
 
-                if i % args.df == 0:
-                    time_now = time.time() - since
-                    # for j in range(9):
-                    # tensor_imshow(outputs[i][j])
-                    print('{}: Epoch:{}/{} Iterate:{} Loss: {:.4f}'.format(
-                        phase, epoch, num_epochs - 1, i, loss))
+    def eval_error(self):
+        xs, ys, preds = [], [], []
+        for batch in self.eval_loader:
+            x, y = batch['image'], batch['labels']
+            x = x.to(self.device)
+            y = y.to(self.device)
+            pred = self.model(x)
 
-                    # statistics
-                running_loss += loss.item() * inputs.size(0)
+            xs.append(x.cpu())
+            ys.append(y.cpu())
+            preds.append(pred.cpu())
 
-            epoch_loss = running_loss / dataset_sizes[phase]
+        # xs = torch.stack(xs)
+        ys = torch.stack(ys)
+        preds = torch.stack(preds)
 
-            print('{} Epoch Loss: {:.4f}'.format(
-                phase, epoch_loss))
+        error = self.eval_loss(preds, ys)
 
-            # deep copy the model
-            if phase == 'val' and epoch_loss < best_loss:
-                best_loss = epoch_loss
-                best_model_wts = copy.deepcopy(model.state_dict())
-
-        print()
-
-    time_elapsed = time.time() - since
-    print('Training complete in {:.0f}m {:.0f}s'.format(
-        time_elapsed // 60, time_elapsed % 60))
-    # print('Best val Loss: {:4f}'.format(best_loss))
-
-    # load best model weights
-    model.load_state_dict(best_model_wts)
-    return model
+        return error, None
 
 
-# Start Train
-trained = train_model(model, criterion, optimizer, scheduler, num_epochs=args.epochs)
+train = TrainModel(args)
 
-torch.save(trained, 'trained_net.pkl')
-# torch.save(trained.state_dict(), 'trained_net_params.pkl')
+for epoch in range(args.epochs):
+    train.train()
+    if (epoch + 1) % args.eval_per_epoch == 0:
+        train.eval()
 
-
+print('Done!!!')

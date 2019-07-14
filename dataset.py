@@ -39,10 +39,9 @@ class HelenDataset(Dataset):
         labels = np.array(labels)
         bg = labels[0] + labels[1] + labels[10]
         labels = np.concatenate((labels[2:10], [bg.clip(0, 255)]), axis=0)
-
-        # one hot
-        labels = labels > 0
-        labels = labels.astype(np.float32)
+        # # one hot
+        # labels = labels > 0
+        # labels = labels.astype(np.float32)
 
         sample = {'image': image, 'labels': labels}
 

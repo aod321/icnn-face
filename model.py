@@ -311,7 +311,7 @@ class FaceModel(torch.nn.Module):
         final_output = self.relu_layer(self.last_conv1(output))
         final_output = self.relu_layer(self.last_conv2(final_output))
         final_output = self.relu_layer(self.last_conv3(final_output))
-        # final_output = self.softmax_layer(final_output)
+        final_output = self.softmax_layer(final_output)
 
         return final_output
 

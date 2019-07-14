@@ -2,6 +2,7 @@ import torch
 import torch.nn
 from torchvision import transforms
 from torchvision.transforms import functional as TF
+import cv2 as cv
 import numpy as np
 
 
@@ -68,7 +69,7 @@ class ToTensor(transforms.ToTensor):
                 Args:
                     dict of pic (PIL Image or numpy.ndarray): Image to be converted to tensor.
 
-                Returns:
+                Returns:y
                     Tensor: Converted image.
         """
         image, labels = sample['image'], sample['labels']
@@ -83,7 +84,11 @@ class ToTensor(transforms.ToTensor):
         labels = [TF.to_tensor(labels[r])
                   for r in range(len(labels))
                   ]
-        labels = torch.cat(labels, dim=0)
+        labels = labels
+
+        labels = torch.cat(labels, dim=0).float()
+
+        np_lb = labels.numpy()
 
         return {'image': TF.to_tensor(image),
                 'labels': labels
@@ -147,6 +152,7 @@ class RandomRotation(transforms.RandomRotation):
 
         return sample
 
+
 class RandomResizedCrop(transforms.RandomResizedCrop):
     """Crop the given PIL Image to random size and aspect ratio.
 
@@ -203,3 +209,32 @@ class CenterCrop(transforms.CenterCrop):
                   }
 
         return sample
+
+
+class LabelsToOneHot(object):
+    """
+        LabelsToOneHot
+    """
+    def __call__(self, sample):
+        """
+        Args:
+            img (PIL Image): Image to be cropped and resized.
+
+        Returns:
+            one-hot numpy label:
+        """
+        img, labels = sample['image'], sample['labels']
+
+        #  Use auto-threshold to binary the labels into one-hot
+        new_labels = []
+        for i in range(len(labels)):
+            temp = np.array(labels[i])
+            _, binary = cv.threshold(temp, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU)
+            new_labels.append(binary)
+
+        sample = {'image': img,
+                  'labels': new_labels
+                  }
+
+        return sample
+
