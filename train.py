@@ -11,6 +11,7 @@ from torchvision import transforms
 import argparse
 
 from tensorboardX import SummaryWriter
+import tensorboardX as tb
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--batch_size", default=10, type=int, help="Batch size to use during training.")
@@ -100,7 +101,7 @@ class TrainModel(TemplateModel):
         self.eval_loader = dataloaders['val']
 
         self.ckpt_dir = "checkpoints"
-        self.display_freq = 10
+        self.display_freq = args.display_freq
 
 
 
@@ -155,11 +156,15 @@ class TrainModel(TemplateModel):
         return error, None
 
 
-train = TrainModel(args)
+def start_train():
+    train = TrainModel(args)
 
-for epoch in range(args.epochs):
-    train.train()
-    if (epoch + 1) % args.eval_per_epoch == 0:
-        train.eval()
+    for epoch in range(args.epochs):
+        train.train()
+        if (epoch + 1) % args.eval_per_epoch == 0:
+            train.eval()
 
-print('Done!!!')
+    print('Done!!!')
+
+
+start_train()
