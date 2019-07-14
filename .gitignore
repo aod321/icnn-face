@@ -15,3 +15,13 @@ build
 # My configurations:
 db.ini
 deploy_key_rsa
+es_model.py
+saved-model.pth
+test.py
+trained_net.pkl
+train_stage1.py
+utils.py
+log
+venv
+res
+.vscode
