@@ -2,7 +2,8 @@ from template import TemplateModel
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from model import FaceModel
+from model_1 import FaceModel
+from es_model import ICNN
 from torch.utils.data import DataLoader
 from dataset import HelenDataset
 from Helen_transform import Resize, ToPILImage, ToTensor, Normalize, RandomRotation, \
@@ -17,7 +18,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--batch_size", default=10, type=int, help="Batch size to use during training.")
 parser.add_argument("--display_freq", default=10, type=int, help="Display frequency")
 parser.add_argument("--lr", default=0.01, type=float, help="Learning rate for optimizer")
-parser.add_argument("--epochs", default=10, type=int, help="Number of epochs to train")
+parser.add_argument("--epochs", default=25, type=int, help="Number of epochs to train")
 parser.add_argument("--eval_per_epoch", default=1, type=int, help="eval_per_epoch ")
 args = parser.parse_args()
 print(args)
@@ -28,8 +29,8 @@ mean = [0.369, 0.314, 0.282]
 std = [0.282, 0.251, 0.238]
 
 # Dataset Read_in Part
-# root_dir = "/data1/yinzi/datas"
-root_dir = '/home/yinzi/Downloads/datas'
+root_dir = "/data1/yinzi/datas"
+# root_dir = '/home/yinzi/Downloads/datas'
 
 txt_file_names = {
     'train': "exemplars.txt",
@@ -44,7 +45,7 @@ transforms_list = {
             RandomResizedCrop((200, 200), scale=(0.9, 1.1)),
             CenterCrop((128,128)),
             Resize((64, 64)),
-            LabelsToOneHot(),
+            # LabelsToOneHot(),
             ToTensor(),
             Normalize(mean=mean,
                       std=std)
@@ -53,7 +54,7 @@ transforms_list = {
         transforms.Compose([
             ToPILImage(),
             Resize((64, 64)),
-            LabelsToOneHot(),
+            # LabelsToOneHot(),
             ToTensor(),
             Normalize(mean=mean,
                       std=std)
@@ -91,11 +92,12 @@ class TrainModel(TemplateModel):
 
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-        self.model = FaceModel()
-        self.model = self.model.to(self.device)
+        self.model = FaceModel().to(self.device)
+        # self.optimizer = optim.SGD(self.model.parameters(), self.args.lr,  momentum=0.9, weight_decay=0.0)
         self.optimizer = optim.Adam(self.model.parameters(), self.args.lr)
-        self.criterion = nn.BCEWithLogitsLoss()
-        self.metric = nn.BCEWithLogitsLoss()
+        self.criterion = nn.CrossEntropyLoss()
+        self.metric = nn.CrossEntropyLoss()
+        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=15, gamma=0.5)
 
         self.train_loader = dataloaders['train']
         self.eval_loader = dataloaders['val']
@@ -113,27 +115,11 @@ class TrainModel(TemplateModel):
 
         x = x.to(self.device)
         y = y.to(self.device)
-
         pred = self.model(x)
-        loss = 0.0
-        for r in range(self.label_channels):
-            loss += self.criterion(pred[:, r, :, :], y[:, r, :, :])
+        loss = self.criterion(pred, y.argmax(dim=1, keepdim=False))
         # loss /= self.args.batch_size
         return loss, None
 
-    # iters x batch_size x channel x h x w
-    def eval_loss(self, preds, ys):
-        loss_list = []
-        iters = len(self.eval_loader)
-        for i in range(iters):
-            loss = 0.0
-            for r in range(self.label_channels):
-                loss += self.metric(preds[i, :, r, :, :], ys[i, :, r, :, :])
-            # loss /= self.args.batch_size
-            loss_list.append(loss)
-        cost = sum(loss_list)/iters
-
-        return cost
 
     def eval_error(self):
         xs, ys, preds = [], [], []
@@ -147,11 +133,11 @@ class TrainModel(TemplateModel):
             ys.append(y.cpu())
             preds.append(pred.cpu())
 
-        # xs = torch.stack(xs)
-        ys = torch.stack(ys)
-        preds = torch.stack(preds)
+        xs = torch.cat(xs, dim=0)
+        ys = torch.cat(ys, dim=0)
+        preds = torch.cat(preds, dim=0)
 
-        error = self.eval_loss(preds, ys)
+        error = self.metric(preds, ys.argmax(dim=1, keepdim=False))
 
         return error, None
 
@@ -160,6 +146,7 @@ def start_train():
     train = TrainModel(args)
 
     for epoch in range(args.epochs):
+        train.scheduler.step()
         train.train()
         if (epoch + 1) % args.eval_per_epoch == 0:
             train.eval()
