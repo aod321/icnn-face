@@ -88,7 +88,7 @@ class ToTensor(transforms.ToTensor):
 
         labels = torch.cat(labels, dim=0).float()
 
-        np_lb = labels.numpy()
+        # np_lb = labels.numpy()
 
         return {'image': TF.to_tensor(image),
                 'labels': labels
@@ -112,8 +112,6 @@ class Normalize(transforms.Normalize):
         """
 
         image_tensor, labels_tensor = sample['image'], sample['labels']
-
-
 
         sample = {'image': TF.normalize(image_tensor, self.mean, self.std, self.inplace),
                   'labels': labels_tensor
