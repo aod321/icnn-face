@@ -1,36 +1,40 @@
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
+import cv2 as cv
 from matplotlib.colors import Normalize as Norm
 from torchvision import transforms
 import numpy as np
 from torchvision.transforms import functional as TF
-
+# from es_model import ICNN
+from model_1 import FaceModel
+import torch
 from dataset import HelenDataset
-
+from template import TemplateModel
 from Helen_transform import Resize, ToPILImage, ToTensor, Normalize, RandomRotation, \
                                 RandomResizedCrop
 
 from visualize import random_colors, apply_mask, tensor_unnormalize, ndarray_imshow, imshow
+import matplotlib
+from tensorboardX import SummaryWriter
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # root_dir = "/data1/yinzi/datas"
 root_dir = '/home/yinzi/Downloads/datas'
 
-face_dataset = HelenDataset(txt_file='exemplars.txt',
+face_dataset = HelenDataset(txt_file='testing.txt',
                             root_dir=root_dir,
                             transform= transforms.Compose([
                                 ToPILImage(),
-                                RandomRotation(15),
-                                RandomResizedCrop((255, 255), scale=(0.9, 1.1)),
-                                Resize((64, 64)),
-                                ToTensor(),
-                                Normalize(mean=[0.369, 0.314, 0.282],
-                                          std=[0.282, 0.251, 0.238])
+                                Resize((512, 512)),
+                                ToTensor()
+                                # Normalize(mean=[0.369, 0.314, 0.282],
+                                #           std=[0.282, 0.251, 0.238])
                             ])
                             )
 
 
 dataloader = DataLoader(face_dataset, batch_size=4,
-                        shuffle=True, num_workers=4)
+                        shuffle=False, num_workers=4)
 
 
 def imshow_with_label(sample):
@@ -71,10 +75,31 @@ def show_label_batch(sample_batched):
     plt.show()
 
 
+
+# model = ICNN()
+model = TemplateModel()
+
+model.model = FaceModel().to(device)
+model.load_state('loss_0049.pth.tar')
+
+
+
 for i_batch, sample_batched in enumerate(dataloader):
     print(i_batch, sample_batched['image'].size(),
           sample_batched['labels'].size())
+    image, labels = sample_batched['image'], sample_batched['labels']
 
+    image = image.to(device)
+    pred = model.model(image)
+
+    # Change the predict-label to one-hot
+    pred = torch.softmax(pred,1)
+    pred = torch.floor(pred * 255)
+
+
+
+    sample = {'image':image ,
+              'labels': pred}
 
     show_label_batch(sample_batched)
 

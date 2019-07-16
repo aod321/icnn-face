@@ -40,7 +40,7 @@ def apply_mask(image, mask, color, alpha=0.5):
         temp_image = (temp_image * 255).astype(np.uint8)
 
     for c in range(3):
-        temp_image[:, :, c] = np.where(mask != 0,
+        temp_image[:, :, c] = np.where(mask !=0 ,
                                        temp_image[:, :, c] *
                                        (1 - alpha) + alpha * color[c] * 255,
                                        temp_image[:, :, c])
@@ -52,10 +52,10 @@ def tensor_unnormalize(inp):
     # Input : Tensor array
     # 0utput : numpy array
     inp = inp.numpy().transpose((1, 2, 0))
-
-    mean = np.array([0.369, 0.314, 0.282])
-    std = np.array([0.282, 0.251, 0.238])
-    inp = std * inp + mean
+    #
+    # mean = np.array([0.369, 0.314, 0.282])
+    # std = np.array([0.282, 0.251, 0.238])
+    # inp = std * inp + mean
     inp = np.clip(inp, 0, 1)
     return inp
 
