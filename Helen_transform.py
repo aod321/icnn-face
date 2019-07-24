@@ -57,6 +57,27 @@ class ToPILImage(object):
                 'labels': labels
                 }
 
+class Stage2_ToPILImage(object):
+    """Convert a  ``numpy.ndarray`` to ``PIL Image``
+
+    """
+    def __call__(self, sample):
+        """
+                Args:
+                    dict of sample (numpy.ndarray): Image and Labels to be converted.
+
+                Returns:
+                    dict of sample(PIL,List of PIL): Converted image and Labels.
+        """
+        image, labels = sample['image'], sample['labels']
+        image = [TF.to_pil_image(image[i])
+                 for i in range(len(image))]
+        labels = [TF.to_pil_image(labels[i])
+                  for i in range(len(labels))]
+
+        return {'image': image,
+                'labels': labels
+                }
 
 class ToTensor(transforms.ToTensor):
     """Convert a ``PIL Image`` or ``numpy.ndarray`` to tensor.
@@ -84,13 +105,47 @@ class ToTensor(transforms.ToTensor):
         labels = [TF.to_tensor(labels[r])
                   for r in range(len(labels))
                   ]
-        labels = labels
-
         labels = torch.cat(labels, dim=0).float()
 
         # np_lb = labels.numpy()
 
         return {'image': TF.to_tensor(image),
+                'labels': labels
+                }
+
+class Stage2_ToTensor(transforms.ToTensor):
+    """Convert a ``PIL Image`` or ``numpy.ndarray`` to tensor.
+
+         Override the __call__ of transforms.ToTensor
+    """
+
+    def __call__(self, sample):
+        """
+                Args:
+                    dict of pic (PIL Image or numpy.ndarray): Image to be converted to tensor.
+
+                Returns:y
+                    Tensor: Converted image.
+        """
+        image, labels = sample['image'], sample['labels']
+
+        # swap color axis because
+        # numpy image: H x W x C
+        # torch image: C X H X W
+
+        # Don't need to swap label because
+        # label image: 9 X H X W
+
+        labels = [TF.to_tensor(labels[r])
+                  for r in range(len(labels))
+                  ]
+        labels = torch.cat(labels, dim=0).float()
+
+        image = [TF.to_tensor(image[r])
+                 for r in range(len(image))]
+        image = torch.stack(image)
+
+        return {'image': image,
                 'labels': labels
                 }
 
