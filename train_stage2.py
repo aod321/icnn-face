@@ -27,8 +27,8 @@ args = parser.parse_args()
 print(args)
 
 # Dataset Read_in Part
-# root_dir = "/data1/yinzi/facial_parts"
-root_dir = '/home/yinzi/data/facial_parts'
+root_dir = "/data1/yinzi/facial_parts"
+# root_dir = '/home/yinzi/data/facial_parts'
 txt_file_names = {
     'train': "exemplars.txt",
     'val': "tuning.txt"
@@ -135,8 +135,34 @@ class Stage2FaceModel(FaceModel):
                                     padding=self.last_kernel_size // 2)
         self.last_conv3_bnm = nn.BatchNorm2d(self.lable_channel_size)
 
+class StageTwoTrain(TemplateModel):
+    def train_loss(self, batch):
+        x, y = batch['image'].float().to(self.device), batch['labels'].float().to(self.device)
+        pred = self.model(x)
+        loss = self.criterion(pred, y)
 
-class EyebrowTrain(TemplateModel):
+        return loss, None
+    def eval_error(self):
+        xs, ys, preds = [], [], []
+        for batch in self.eval_loader:
+            x, y = batch['image'], batch['labels']
+            x = x.float().to(self.device)
+            y = y.float().to(self.device)
+            pred = self.model(x)
+
+            xs.append(x.cpu())
+            ys.append(y.cpu())
+            preds.append(pred.cpu())
+
+        xs = torch.cat(xs, dim=0)
+        ys = torch.cat(ys, dim=0)
+        preds = torch.cat(preds, dim=0)
+        error = self.criterion(preds, ys)
+
+        return error, None
+
+
+class EyebrowTrain(StageTwoTrain):
     def __init__(self, argus=args):
         super(EyebrowTrain, self).__init__()
         self.label_channels = 2
@@ -153,8 +179,9 @@ class EyebrowTrain(TemplateModel):
 
         self.device = torch.device("cuda:%d"%self.args.cuda if torch.cuda.is_available() else "cpu")
 
-        self.model = Stage2FaceModel().to(self.device)
+        self.model = Stage2FaceModel()
         self.model.set_label_channels(self.label_channels)
+        self.model = self.model.to(self.device)
         # self.optimizer = optim.SGD(self.model.parameters(), self.args.lr,  momentum=0.9, weight_decay=0.0)
         self.optimizer = optim.Adam(self.model.parameters(), self.args.lr)
         # self.criterion = nn.CrossEntropyLoss()
@@ -172,7 +199,7 @@ class EyebrowTrain(TemplateModel):
         self.check_init()
 
 
-class EyeTrain(TemplateModel):
+class EyeTrain(StageTwoTrain):
     def __init__(self, argus=args):
         super(EyeTrain, self).__init__()
         self.label_channels = 2
@@ -189,8 +216,9 @@ class EyeTrain(TemplateModel):
 
         self.device = torch.device("cuda:%d"%self.args.cuda if torch.cuda.is_available() else "cpu")
 
-        self.model = Stage2FaceModel().to(self.device)
+        self.model = Stage2FaceModel()
         self.model.set_label_channels(self.label_channels)
+        self.model = self.model.to(self.device)
         # self.optimizer = optim.SGD(self.model.parameters(), self.args.lr,  momentum=0.9, weight_decay=0.0)
         self.optimizer = optim.Adam(self.model.parameters(), self.args.lr)
         # self.criterion = nn.CrossEntropyLoss()
@@ -208,7 +236,7 @@ class EyeTrain(TemplateModel):
         self.check_init()
 
 
-class NoseTrain(TemplateModel):
+class NoseTrain(StageTwoTrain):
     def __init__(self, argus=args):
         super(NoseTrain, self).__init__()
         self.label_channels = 2
@@ -225,8 +253,9 @@ class NoseTrain(TemplateModel):
 
         self.device = torch.device("cuda:%d"%self.args.cuda if torch.cuda.is_available() else "cpu")
 
-        self.model = Stage2FaceModel().to(self.device)
+        self.model = Stage2FaceModel()
         self.model.set_label_channels(self.label_channels)
+        self.model = self.model.to(self.device)
         # self.optimizer = optim.SGD(self.model.parameters(), self.args.lr,  momentum=0.9, weight_decay=0.0)
         self.optimizer = optim.Adam(self.model.parameters(), self.args.lr)
         # self.criterion = nn.CrossEntropyLoss()
@@ -244,7 +273,7 @@ class NoseTrain(TemplateModel):
         self.check_init()
 
 
-class MouthTrain(TemplateModel):
+class MouthTrain(StageTwoTrain):
     def __init__(self, argus=args):
         super(MouthTrain, self).__init__()
         self.label_channels = 6
@@ -261,8 +290,9 @@ class MouthTrain(TemplateModel):
 
         self.device = torch.device("cuda:%d"%self.args.cuda if torch.cuda.is_available() else "cpu")
 
-        self.model = Stage2FaceModel().to(self.device)
+        self.model = Stage2FaceModel()
         self.model.set_label_channels(self.label_channels)
+        self.model = self.model.to(self.device)
         # self.optimizer = optim.SGD(self.model.parameters(), self.args.lr,  momentum=0.9, weight_decay=0.0)
         self.optimizer = optim.Adam(self.model.parameters(), self.args.lr)
         # self.criterion = nn.CrossEntropyLoss()
@@ -287,6 +317,7 @@ def start_train():
              model_name_list[3]: MouthTrain(args)
     }
     for x in model_name_list:
+        print("Train %s patch Now" % x)
         for epoch in range(args.epochs):
             # train[x].scheduler.step()
             train[x].train()
