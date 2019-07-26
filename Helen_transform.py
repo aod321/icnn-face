@@ -28,7 +28,8 @@ class Resize(transforms.Resize):
                           ]
 
         sample = {'image': resized_image,
-                  'labels': resized_labels
+                  'labels': resized_labels,
+                  'index': sample['index']
                   }
 
         return sample
@@ -54,7 +55,8 @@ class ToPILImage(object):
                   for i in range(labels.shape[0])]
 
         return {'image': image,
-                'labels': labels
+                'labels': labels,
+                'index': sample['index']
                 }
 
 class Stage2_ToPILImage(object):
@@ -76,7 +78,8 @@ class Stage2_ToPILImage(object):
                   for i in range(len(labels))]
 
         return {'image': image,
-                'labels': labels
+                'labels': labels,
+                'index': sample['index']
                 }
 
 class ToTensor(transforms.ToTensor):
@@ -110,8 +113,10 @@ class ToTensor(transforms.ToTensor):
         # np_lb = labels.numpy()
 
         return {'image': TF.to_tensor(image),
-                'labels': labels
+                'labels': labels,
+                'index': sample['index']
                 }
+
 
 class Stage2_ToTensor(transforms.ToTensor):
     """Convert a ``PIL Image`` or ``numpy.ndarray`` to tensor.
@@ -132,6 +137,7 @@ class Stage2_ToTensor(transforms.ToTensor):
         # swap color axis because
         # numpy image: H x W x C
         # torch image: C X H X W
+        # image = image.transpose((2, 0, 1))
 
         # Don't need to swap label because
         # label image: 9 X H X W
@@ -141,12 +147,9 @@ class Stage2_ToTensor(transforms.ToTensor):
                   ]
         labels = torch.cat(labels, dim=0).float()
 
-        image = [TF.to_tensor(image[r])
-                 for r in range(len(image))]
-        image = torch.stack(image)
-
-        return {'image': image,
-                'labels': labels
+        return {'image': TF.to_tensor(image),
+                'labels': labels,
+                'index': sample['index']
                 }
 
 
@@ -169,7 +172,8 @@ class Normalize(transforms.Normalize):
         image_tensor, labels_tensor = sample['image'], sample['labels']
 
         sample = {'image': TF.normalize(image_tensor, self.mean, self.std, self.inplace),
-                  'labels': labels_tensor
+                  'labels': labels_tensor,
+                  'index': sample['index']
                   }
 
         return sample
@@ -200,8 +204,9 @@ class RandomRotation(transforms.RandomRotation):
                           ]
 
         sample ={'image': rotated_img,
-                 'labels': rotated_labels
-                }
+                 'labels': rotated_labels,
+                 'index': sample['index']
+                 }
 
         return sample
 
@@ -230,7 +235,8 @@ class RandomResizedCrop(transforms.RandomResizedCrop):
                          ]
 
         sample = {'image': croped_img,
-                  'labels': croped_labels
+                  'labels': croped_labels,
+                  'index': sample['index']
                   }
 
         return sample
@@ -258,7 +264,8 @@ class CenterCrop(transforms.CenterCrop):
                          ]
 
         sample = {'image': croped_img,
-                  'labels': croped_labels
+                  'labels': croped_labels,
+                  'index': sample['index']
                   }
 
         return sample
@@ -281,12 +288,13 @@ class LabelsToOneHot(object):
         #  Use auto-threshold to binary the labels into one-hot
         new_labels = []
         for i in range(len(labels)):
-            temp = np.array(labels[i])
+            temp = labels[i]
             _, binary = cv.threshold(temp, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU)
             new_labels.append(binary)
 
         sample = {'image': img,
-                  'labels': new_labels
+                  'labels': new_labels,
+                  'index': sample['index']
                   }
 
         return sample
