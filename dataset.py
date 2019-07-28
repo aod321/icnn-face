@@ -141,54 +141,63 @@ class SinglepartAugmentation(object):
 
     def set_choice(self):
         choice = {
-                  self.augmentation_name[1]: [HorizontalFlip(),
-                      RandomRotation(15),
-                      transforms.RandomOrder([HorizontalFlip(),
-                                              RandomRotation(15),
-                                              RandomAffine(degrees=0, translate=(0.01, 0.1), scale=(0.9, 1.1))
-                                              ]
-                                             )
-                      ],
-                  self.augmentation_name[2]: [GaussianNoise(),
-                      RandomResizedCrop((64, 64), scale=(0.9, 1.1)),
-                      RandomAffine(degrees=15, translate=(0.01, 0.1), scale=(0.9, 1.1)),
-                      transforms.RandomOrder([GaussianNoise(),
-                                              RandomResizedCrop((64, 64), scale=(0.9, 1.1)),
-                                              RandomAffine(degrees=15, translate=(0.01, 0.1), scale=(0.9, 1.1))
-                                              ]
-                                             )
-                      ],
-                  self.augmentation_name[3]:  [transforms.RandomOrder([GaussianNoise(),
-                                               HorizontalFlip()
-                                               ]
-                                              ),
-                       transforms.RandomOrder([GaussianNoise(),
-                                               RandomRotation(15)
-                                               ]
-                                              ),
-                       transforms.RandomOrder([GaussianNoise(),
-                                               HorizontalFlip(),
-                                               RandomAffine(degrees=15, translate=(0.01, 0.1), scale=(0.9, 1.1))
-                                               ]
-                                              )
-                       ],
-                  self.augmentation_name[4]: [transforms.RandomOrder([GaussianNoise(),
-                                              RandomResizedCrop((64, 64), scale=(0.9, 1.1))
-                                              ]
-                                             ),
-                      transforms.RandomOrder([HorizontalFlip(),
-                                              RandomResizedCrop((64, 64), scale=(0.9, 1.1))
-                                              ]
-                                             ),
-                      transforms.RandomOrder([GaussianNoise(),
-                                              HorizontalFlip(),
-                                              RandomResizedCrop((64, 64), scale=(0.9, 1.1)),
-                                              RandomAffine(degrees=15, translate=(0.01, 0.1), scale=(0.9, 1.1))
-                                              ]
-                                             )
-                      ]
-                  }
+            # random_choice 1:  h_flip, rotaion, h_flip + rotation + scale_translate (random_order)
+            self.augmentation_name[1]: [HorizontalFlip(),
+                                        RandomRotation(15),
+                                        transforms.RandomOrder([HorizontalFlip(),
+                                                                RandomRotation(15),
+                                                                RandomAffine(degrees=0, translate=(0.01, 0.1),
+                                                                             scale=(0.9, 1.1))
+                                                                ]
+                                                               )
+                                        ],
+            # random_choice 2:  noise, crop, noise + crop + rotation_scale_translate (random_order)
+            self.augmentation_name[2]: [GaussianNoise(),
+                                        RandomResizedCrop((64, 64), scale=(0.9, 1.1)),
+                                        RandomAffine(degrees=15, translate=(0.01, 0.1), scale=(0.9, 1.1)),
+                                        transforms.RandomOrder([GaussianNoise(),
+                                                                RandomResizedCrop((64, 64), scale=(0.9, 1.1)),
+                                                                RandomAffine(degrees=15, translate=(0.01, 0.1),
+                                                                             scale=(0.9, 1.1))
+                                                                ]
+                                                               )
+                                        ],
+            # random_choice 3:  noise + h_flip , noise + rotation ,noise + h_flip + rotation_scale_translate
+            self.augmentation_name[3]: [transforms.RandomOrder([GaussianNoise(),
+                                                                HorizontalFlip()
+                                                                ]
+                                                               ),
+                                        transforms.RandomOrder([GaussianNoise(),
+                                                                RandomRotation(15)
+                                                                ]
+                                                               ),
+                                        transforms.RandomOrder([GaussianNoise(),
+                                                                HorizontalFlip(),
+                                                                RandomAffine(degrees=15, translate=(0.01, 0.1),
+                                                                             scale=(0.9, 1.1))
+                                                                ]
+                                                               )
+                                        ],
+            # random_choice 4:  noise + crop , h_flip + crop ,noise + h_flip + crop + rotation_scale_translate
+            self.augmentation_name[4]: [transforms.RandomOrder([GaussianNoise(),
+                                                                RandomResizedCrop((64, 64), scale=(0.9, 1.1))
+                                                                ]
+                                                               ),
+                                        transforms.RandomOrder([HorizontalFlip(),
+                                                                RandomResizedCrop((64, 64), scale=(0.9, 1.1))
+                                                                ]
+                                                               ),
+                                        transforms.RandomOrder([GaussianNoise(),
+                                                                HorizontalFlip(),
+                                                                RandomResizedCrop((64, 64), scale=(0.9, 1.1)),
+                                                                RandomAffine(degrees=15, translate=(0.01, 0.1),
+                                                                             scale=(0.9, 1.1))
+                                                                ]
+                                                               )
+                                        ]
+        }
         self.randomchoice = choice
+
     def set_resize(self, resize):
         self.resize = resize
 
@@ -202,6 +211,7 @@ class SinglepartAugmentation(object):
             ]),
             self.augmentation_name[1]: transforms.Compose([
                 ToPILImage(),
+                # Choose from tranforms_list randomly
                 transforms.RandomChoice(self.randomchoice['choice1']),
                 Resize(self.resize),
                 LabelsToOneHot(),
