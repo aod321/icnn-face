@@ -50,8 +50,6 @@ eye1_augmentation = DoublePartAugmentation(dataset=SinglePart,
                                            resize=(64, 64),
                                            set_part=['eye1', range(4, 5), 1]
                                            )
-
-
 eye2_augmentation = DoublePartAugmentation(dataset=SinglePart,
                                            txt_file=txt_file_names,
                                            root_dir=root_dir,
@@ -79,13 +77,17 @@ stage1_dataloaders = {x: DataLoader(enhaced_stage1_datasets[x], batch_size=16,
 
 stage1_dataset_sizes = {x: len(enhaced_stage1_datasets[x]) for x in ['train', 'val']}
 
-nose_enhanced_dataset = nose_augmentation.get_dataset()
-mouth_enhanced_dataset = mouth_augmentation.get_dataset()
-eye1_enhanced_dataset = eye1_augmentation.get_dataset()
-eye2_enhanced_dataset = eye2_augmentation.get_dataset()
-eyebrow1_enhanced_dataset = eyebrow1_augmentation.get_dataset()
-eyebrow2_enhanced_dataset = eyebrow2_augmentation.get_dataset()
+nose_dataset = nose_augmentation.get_dataset()
+mouth_dataset = mouth_augmentation.get_dataset()
+eye1_dataset = eye1_augmentation.get_dataset()
+eye2_dataset = eye2_augmentation.get_dataset()
+eyebrow1_dataset = eyebrow1_augmentation.get_dataset()
+eyebrow2_dataset = eyebrow2_augmentation.get_dataset()
 
+eyes_dataset = {x: ConcatDataset([eye1_dataset[x], eye2_dataset[x]])
+                      for x in ['train', 'val']}
+eyebrows_dataset = {x: ConcatDataset([eyebrow1_dataset[x], eyebrow2_dataset[x]])
+                      for x in ['train', 'val']}
 
 def imshow(inp, title=None):
     """Imshow for Tensor."""
