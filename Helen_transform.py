@@ -4,7 +4,8 @@ from torchvision import transforms
 from torchvision.transforms import functional as TF
 import cv2 as cv
 import numpy as np
-
+import random
+from skimage.util import random_noise
 
 class Resize(transforms.Resize):
     """Resize the input PIL Image to the given size.
@@ -48,7 +49,7 @@ class ToPILImage(object):
                     dict of sample(PIL,List of PIL): Converted image and Labels.
         """
         image, labels = sample['image'], sample['labels']
-
+        labels = np.uint8(labels)
         image = TF.to_pil_image(image)
 
         labels = [TF.to_pil_image(labels[i])
@@ -110,7 +111,7 @@ class ToTensor(transforms.ToTensor):
                   ]
         labels = torch.cat(labels, dim=0).float()
 
-        # np_lb = labels.numpy()
+        np_lb = labels.detach().cpu().numpy()
 
         return {'image': TF.to_tensor(image),
                 'labels': labels,
@@ -153,11 +154,8 @@ class Stage2_ToTensor(transforms.ToTensor):
                 }
 
 
-class Normalize(transforms.Normalize):
+class Normalize(object):
     """Normalize Tensors.
-
-        Override the __call__ of transforms.Normalize
-
     """
 
     def __call__(self, sample):
@@ -170,8 +168,12 @@ class Normalize(transforms.Normalize):
         """
 
         image_tensor, labels_tensor = sample['image'], sample['labels']
-
-        sample = {'image': TF.normalize(image_tensor, self.mean, self.std, self.inplace),
+        # mean = image_tensor.mean(dim=[1, 2]).tolist()
+        # std = image_tensor.std(dim=[1, 2]).tolist()
+        mean = [0.369, 0.314, 0.282]
+        std = [0.282, 0.251, 0.238]
+        inplace = True
+        sample = {'image': TF.normalize(image_tensor, mean, std, inplace),
                   'labels': labels_tensor,
                   'index': sample['index']
                   }
@@ -242,6 +244,33 @@ class RandomResizedCrop(transforms.RandomResizedCrop):
         return sample
 
 
+class HorizontalFlip(object):
+    """ HorizontalFlip the given PIL Image
+    """
+
+    def __call__(self, sample):
+        """
+        Args:
+            img (PIL Image): Image to be
+
+        Returns:
+        """
+        img, labels = sample['image'], sample['labels']
+
+        img = TF.hflip(img)
+
+        labels = [TF.hflip(labels[r])
+                  for r in range(len(labels))
+                  ]
+
+        sample = {'image': img,
+                  'labels': labels,
+                  'index': sample['index']
+                  }
+
+        return sample
+
+
 class CenterCrop(transforms.CenterCrop):
     """CenterCrop the given PIL Image to random size and aspect ratio.
 
@@ -288,7 +317,7 @@ class LabelsToOneHot(object):
         #  Use auto-threshold to binary the labels into one-hot
         new_labels = []
         for i in range(len(labels)):
-            temp = labels[i]
+            temp = np.array(labels[i], np.uint8)
             _, binary = cv.threshold(temp, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU)
             new_labels.append(binary)
 
@@ -299,3 +328,38 @@ class LabelsToOneHot(object):
 
         return sample
 
+
+class RandomAffine(transforms.RandomAffine):
+
+    def __call__(self, sample):
+        """
+            img (PIL Image): Image to be transformed.
+
+        Returns:
+            PIL Image: Affine transformed image.
+        """
+        img, labels = sample['image'], sample['labels']
+        ret = self.get_params(self.degrees, self.translate, self.scale, self.shear, img.size)
+        img = TF.affine(img, *ret, resample=self.resample, fillcolor=self.fillcolor)
+        labels = [TF.affine(labels[r], *ret, resample=self.resample, fillcolor=self.fillcolor)
+                  for r in range(len(labels))]
+        sample = {'image': img,
+                  'labels': labels,
+                  'index': sample['index']
+                  }
+        return sample
+
+
+class GaussianNoise(object):
+    def __call__(self, sample):
+
+        img, labels = sample['image'], sample['labels']
+        img = np.array(img, np.uint8)
+        img = random_noise(img)
+        img = TF.to_pil_image(np.uint8(255 * img))
+        sample = {'image': img,
+                  'labels': labels,
+                  'index': sample['index']
+                  }
+
+        return sample
