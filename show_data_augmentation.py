@@ -21,22 +21,26 @@ transforms_all = [
     RandomResizedCrop((64, 64), scale=(0.9, 1.1)),                           # crop, scale and resize
 ]
 
-# origin
-
+# Stage 1 augmentation
 stage1_augmentation = SinglepartAugmentation(dataset=HelenDataset,
                                                 txt_file=txt_file_names,
                                                 root_dir=root_dir,
                                                 resize=(64, 64)
                                                 )
-
 enhaced_stage1_datasets = stage1_augmentation.get_dataset()
+stage1_dataloaders = {x: DataLoader(enhaced_stage1_datasets[x], batch_size=16,
+                             shuffle=True, num_workers=4)
+               for x in ['train', 'val']}
 
+stage1_dataset_sizes = {x: len(enhaced_stage1_datasets[x]) for x in ['train', 'val']}
 nose_augmentation = SinglepartAugmentation(dataset=SinglePart,
                                            txt_file=txt_file_names,
                                            root_dir=root_dir,
                                            resize=(64, 64),
                                            set_part=['nose', range(6, 7), 1]
                                            )
+
+# Stage 2 Augmentation
 
 mouth_augmentation = SinglepartAugmentation(dataset=SinglePart,
                                             txt_file=txt_file_names,
@@ -70,13 +74,6 @@ eyebrow2_augmentation = DoublePartAugmentation(dataset=SinglePart,
                                                set_part=['eyebrow2', range(3, 4), 1],
                                                with_flip=True
                                                )
-
-stage1_dataloaders = {x: DataLoader(enhaced_stage1_datasets[x], batch_size=16,
-                             shuffle=True, num_workers=4)
-               for x in ['train', 'val']}
-
-stage1_dataset_sizes = {x: len(enhaced_stage1_datasets[x]) for x in ['train', 'val']}
-
 nose_dataset = nose_augmentation.get_dataset()
 mouth_dataset = mouth_augmentation.get_dataset()
 eye1_dataset = eye1_augmentation.get_dataset()
@@ -88,6 +85,8 @@ eyes_dataset = {x: ConcatDataset([eye1_dataset[x], eye2_dataset[x]])
                       for x in ['train', 'val']}
 eyebrows_dataset = {x: ConcatDataset([eyebrow1_dataset[x], eyebrow2_dataset[x]])
                       for x in ['train', 'val']}
+
+#   Test Stage1 augmentation
 
 def imshow(inp, title=None):
     """Imshow for Tensor."""
