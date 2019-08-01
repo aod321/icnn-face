@@ -8,12 +8,13 @@ from model_1 import FaceModel
 from torch.utils.data import DataLoader
 from dataset import HelenDataset
 from Helen_transform import Resize, ToPILImage, ToTensor, Normalize, RandomRotation, \
-                                RandomResizedCrop, CenterCrop, LabelsToOneHot
+    RandomResizedCrop, CenterCrop, LabelsToOneHot
 from torchvision import transforms
 import argparse
 import numpy as np
 from tensorboardX import SummaryWriter
 import tensorboardX as tb
+from dataset import Stage1Augmentation
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--batch_size", default=10, type=int, help="Batch size to use during training.")
@@ -54,23 +55,23 @@ transforms_list = {
             # Normalize()
         ])
 }
+# Stage 1 augmentation
+stage1_augmentation = Stage1Augmentation(dataset=HelenDataset,
+                                         txt_file=txt_file_names,
+                                         root_dir=root_dir,
+                                         resize=(64, 64)
+                                         )
+enhaced_stage1_datasets = stage1_augmentation.get_dataset()
+stage1_dataloaders = {x: DataLoader(enhaced_stage1_datasets[x], batch_size=args.batch_size,
+                                    shuffle=True, num_workers=4)
+                      for x in ['train', 'val']}
 
-image_datasets = {x: HelenDataset(txt_file=txt_file_names[x],
-                                  root_dir=root_dir,
-                                  transform=transforms_list[x]
-                                  )
-                  for x in ['train', 'val']}
-
-dataloaders = {x: DataLoader(image_datasets[x], batch_size=args.batch_size,
-                             shuffle=True, num_workers=4)
-               for x in ['train', 'val']}
-
-dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'val']}
+stage1_dataset_sizes = {x: len(enhaced_stage1_datasets[x]) for x in ['train', 'val']}
 
 
 class TrainModel(TemplateModel):
 
-    def __init__(self , argus = args):
+    def __init__(self, argus=args):
         super(TrainModel, self).__init__()
         self.label_channels = 9
         # ============== not neccessary ===============
@@ -94,21 +95,17 @@ class TrainModel(TemplateModel):
         self.metric = nn.CrossEntropyLoss()
         self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.5)
 
-        self.train_loader = dataloaders['train']
-        self.eval_loader = dataloaders['val']
+        self.train_loader = stage1_dataloaders['train']
+        self.eval_loader = stage1_dataloaders['val']
 
         self.ckpt_dir = "checkpoints"
         self.display_freq = args.display_freq
-
-
 
         # call it to check all members have been intiated
         self.check_init()
 
     def train_loss(self, batch):
-
         x, y = batch['image'].float().to(self.device), batch['labels'].float().to(self.device)
-
 
         pred = self.model(x)
         # loss = self.criterion(pred, y)

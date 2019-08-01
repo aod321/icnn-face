@@ -51,7 +51,8 @@ class HelenDataset(Dataset):
         image = np.array(image)
         labels = [io.imread(labels_path[i]) for i in range(11)]
         labels = np.array(labels)
-        bg = labels[0] + labels[1] + labels[10]
+        # bg = labels[0] + labels[1] + labels[10]
+        bg = 255 - labels[2:10].sum(0)
         labels = np.concatenate(([bg.clip(0, 255)], labels[2:10]), axis=0)
         sample = {'image': image, 'labels': labels, 'index': idx}
 
@@ -121,16 +122,13 @@ class SinglePart(Dataset):
             sample = {'image': img, 'labels': new_label, 'index': idx}
         return sample
 
-
-class SinglepartAugmentation(object):
-    def __init__(self, dataset, txt_file, root_dir, resize, set_part=None, with_flip=False):
+class Stage1Augmentation(object):
+    def __init__(self, dataset, txt_file, root_dir, resize):
         self.augmentation_name = ['origin', 'choice1', 'choice2', 'choice3', 'choice4']
         self.randomchoice = None
         self.transforms = None
         self.transforms_list = None
         self.dataset = dataset
-        self.set_part = set_part
-        self.with_flip = with_flip
         self.txt_file = txt_file
         self.root_dir = root_dir
         self.resize = resize
@@ -246,6 +244,31 @@ class SinglepartAugmentation(object):
             'val':
                 self.transforms['origin']
         }
+
+    def get_dataset(self):
+        datasets = {'train': [self.dataset(txt_file=self.txt_file['train'],
+                                           root_dir=self.root_dir,
+                                           transform=self.transforms_list['train'][r]
+                                           )
+                              for r in self.augmentation_name],
+                    'val': self.dataset(txt_file=self.txt_file['val'],
+                                        root_dir=self.root_dir,
+                                        transform=self.transforms_list['val']
+                                        )
+                    }
+        enhaced_datasets = {'train': ConcatDataset(datasets['train']),
+                            'val': datasets['val']
+                            }
+
+        return enhaced_datasets
+
+
+class SinglepartAugmentation(Stage1Augmentation):
+    def __init__(self, dataset, txt_file, root_dir, resize,
+                 set_part=None, with_flip=False):
+        super(SinglepartAugmentation, self).__init__(dataset, txt_file, root_dir, resize)
+        self.set_part = set_part
+        self.with_flip = with_flip
 
     def get_dataset(self):
         datasets = {'train': [self.dataset(txt_file=self.txt_file['train'],
