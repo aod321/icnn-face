@@ -117,7 +117,7 @@ class TemplateModel():
             self.save_state(osp.join(self.ckpt_dir, 'best.pth.tar'), False)
         self.save_state(osp.join(self.ckpt_dir, '{}.pth.tar'.format(self.epoch)))
         self.writer.add_scalar('error', error, self.epoch)
-        print('epoch {}\terror {:.3}'.format(self.epoch, error))
+        print('epoch {}\terror {:.3}\tbest_error {:.3}'.format(self.epoch, error, self.best_error))
 
         if self.eval_logger:
             self.eval_logger(self.writer, others)
