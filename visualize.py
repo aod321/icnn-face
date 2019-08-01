@@ -4,6 +4,8 @@ import random
 import itertools
 import colorsys
 import numpy as np
+import torchvision
+import torchvision.transforms.functional as TF
 from skimage.measure import find_contours
 import matplotlib.pyplot as plt
 if "DISPLAY" not in os.environ:
@@ -38,9 +40,8 @@ def apply_mask(image, mask, color, alpha=0.5):
 
     if temp_image.dtype != np.uint8:
         temp_image = (temp_image * 255).astype(np.uint8)
-
     for c in range(3):
-        temp_image[:, :, c] = np.where(mask !=0 ,
+        temp_image[:, :, c] = np.where(mask != 0,
                                        temp_image[:, :, c] *
                                        (1 - alpha) + alpha * color[c] * 255,
                                        temp_image[:, :, c])
@@ -51,7 +52,7 @@ def tensor_unnormalize(inp):
 
     # Input : Tensor array
     # 0utput : numpy array
-    inp = inp.numpy().transpose((1, 2, 0))
+    inp = inp.detach().cpu().numpy().transpose((1, 2, 0))
     #
     # mean = np.array([0.369, 0.314, 0.282])
     # std = np.array([0.282, 0.251, 0.238])
@@ -94,3 +95,69 @@ def imshow(inp, title=None):
     if title is not None:
         plt.title(title)
     plt.pause(0.001)  # pause a bit so that plots are updated
+
+def get_masked_image(sample_batched):
+    """Show image with landmarks for a batch of samples."""
+    images_batch, label_batch = \
+        sample_batched['image'], sample_batched['labels']
+    batch_size = len(images_batch)
+    colors = random_colors(label_batch.shape[1])
+    img_list = []
+    for j in range(batch_size):
+        # plt.subplot(1, batch_size, j + 1)
+        image = images_batch[j]
+        # Before imshow we have to unnormalize the image
+        image_masked = tensor_unnormalize(image)
+        for k in range(1, label_batch.shape[1]):
+            color = colors[k]
+            image_masked = apply_mask(image=image_masked,
+                                      mask=label_batch[j][k], color=color, alpha=0.5)
+        # plt.imshow(image_masked.clip(0, 255))
+        image_masked = np.array(image_masked.clip(0, 255), dtype=np.uint8)
+        img_list.append(TF.to_tensor(image_masked))
+    out_img = torch.stack(img_list)
+    return out_img
+
+
+def show_mask(image, predict):
+    binary_list = []
+    predic_argm = predict.argmax(dim=1, keepdim=False)
+    for i in range(predict.shape[1]):
+        binary = (predic_argm == i)
+        binary_list.append(binary)
+    pred = torch.stack(binary_list, dim=1)
+    pred = pred.detach().cpu().numpy()
+    sample = {'image': image,
+              'labels': pred}
+    masked_image = get_masked_image(sample)
+    out = torchvision.utils.make_grid(masked_image)
+    imshow(out)
+
+def imshow(inp, title=None):
+    """Imshow for Tensor."""
+    inp = inp.detach().cpu().numpy().transpose((1, 2, 0))
+    inp = np.clip(inp, 0, 1)
+    plt.imshow(inp)
+    if title is not None:
+        plt.title(title)
+    plt.pause(0.001)  # pause a bit so that plots are updated
+
+def save_mask_result(count, x, image, predict):
+    binary_list = []
+    predic_argm = predict.argmax(dim=1, keepdim=False)
+    for i in range(predict.shape[1]):
+        binary = (predic_argm == i)
+        binary_list.append(binary)
+    pred = torch.stack(binary_list, dim=1)
+    pred = pred.detach().cpu().numpy()
+    sample = {'image': image,
+              'labels': pred}
+    masked_image = get_masked_image(sample)
+    out = torchvision.utils.make_grid(masked_image)
+    out = out.detach().cpu().numpy().transpose((1, 2, 0))
+    out = np.clip(out, 0, 1)
+    plt.imshow(out)
+    save_dir = os.path.join("stage2_res/{}".format(x))
+    if os.path.exists(save_dir) is False:
+        os.makedirs(save_dir)
+    plt.savefig(os.path.join(save_dir, '{}.png'.format(count)))

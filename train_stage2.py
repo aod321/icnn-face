@@ -1,12 +1,12 @@
-from template import TemplateModel
+from template import TemplateModel, F1Accuracy
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from model_1 import FaceModel
+from model_1 import FaceModel, Stage2FaceModel
 # from es_model import ICNN
 from torch.utils.data import DataLoader, ConcatDataset
-from dataset import HelenDataset, SinglePart
-from Helen_transform import Resize, ToPILImage, ToTensor, Normalize, RandomRotation, \
+from dataset import HelenDataset, SinglePart, SinglepartAugmentation, DoublePartAugmentation
+from Helen_transform import Resize, ToPILImage, ToTensor, Normalize, HorizontalFlip, \
                                 RandomResizedCrop, CenterCrop, LabelsToOneHot
 from torchvision import transforms
 import argparse
@@ -17,10 +17,10 @@ import os.path as osp
 import os
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--cuda", default=0, type=int, help="eval_per_epoch ")
-parser.add_argument("--batch_size", default=10, type=int, help="Batch size to use during training.")
+parser.add_argument("--cuda", default=0, type=int, help="Choose which GPU")
+parser.add_argument("--batch_size", default=16, type=int, help="Batch size to use during training.")
 parser.add_argument("--display_freq", default=10, type=int, help="Display frequency")
-parser.add_argument("--lr", default=0.01, type=float, help="Learning rate for optimizer")
+parser.add_argument("--lr", default=0.0025, type=float, help="Learning rate for optimizer")
 parser.add_argument("--epochs", default=25, type=int, help="Number of epochs to train")
 parser.add_argument("--eval_per_epoch", default=1, type=int, help="eval_per_epoch ")
 args = parser.parse_args()
@@ -38,46 +38,72 @@ transforms_list = {
     'train':
         transforms.Compose([
             LabelsToOneHot(),
-            ToTensor()
+            ToTensor(),
+            Normalize()
         ]),
     'val':
         transforms.Compose([
             LabelsToOneHot(),
-            ToTensor()
+            ToTensor(),
+            Normalize()
         ])
 }
 
-# _____________________________________
-eyebrow1_dataset = {x: SinglePart(txt_file=txt_file_names[x],
+
+"""     
+    Data Augmentation
+"""
+
+nose_augmentation = SinglepartAugmentation(dataset=SinglePart,
+                                           txt_file=txt_file_names,
                                            root_dir=root_dir,
-                                           transform=transforms_list[x]
-                                  ).set_part(name='eyebrow1',range=range(2,3),label_numbers=1)
-                      for x in ['train', 'val']}
-eyebrow2_dataset = {x: SinglePart(txt_file=txt_file_names[x],
+                                           resize=(64, 64),
+                                           set_part=['nose', range(6, 7), 1]
+                                           )
+
+mouth_augmentation = SinglepartAugmentation(dataset=SinglePart,
+                                            txt_file=txt_file_names,
+                                            root_dir=root_dir,
+                                            resize=(80, 80),
+                                            set_part=['mouth', range(7, 10), 3]
+                                            )
+eye1_augmentation = DoublePartAugmentation(dataset=SinglePart,
+                                           txt_file=txt_file_names,
                                            root_dir=root_dir,
-                                           transform=transforms_list[x]
-                                  ).set_part(name='eyebrow2',range=range(3,4),label_numbers=1)
-                      for x in ['train', 'val']}
-eye1_dataset = {x: SinglePart(txt_file=txt_file_names[x],
-                              root_dir=root_dir,
-                              transform=transforms_list[x]
-                              ).set_part(name='eye1', range=range(4, 5), label_numbers=1)
-                      for x in ['train', 'val']}
-eye2_dataset = {x: SinglePart(txt_file=txt_file_names[x],
+                                           resize=(64, 64),
+                                           set_part=['eye1', range(4, 5), 1]
+                                           )
+eye2_augmentation = DoublePartAugmentation(dataset=SinglePart,
+                                           txt_file=txt_file_names,
                                            root_dir=root_dir,
-                                           transform=transforms_list[x]
-                                  ).set_part(name='eye2',range=range(5,6),label_numbers=1)
-                      for x in ['train', 'val']}
-nose_dataset = {x: SinglePart(txt_file=txt_file_names[x],
-                                           root_dir = root_dir,
-                                           transform = transforms_list[x]
-                                  ).set_part(name='nose', range=range(6,7),label_numbers=1)
-                      for x in ['train', 'val']}
-mouth_dataset = {x: SinglePart(txt_file=txt_file_names[x],
-                                           root_dir = root_dir,
-                                           transform = transforms_list[x]
-                                  ).set_part(name='mouth', range=range(7,10),label_numbers=3)
-                      for x in ['train', 'val']}
+                                           resize=(64, 64),
+                                           set_part=['eye2', range(5, 6), 1],
+                                           with_flip=True
+                                           )
+eyebrow1_augmentation = DoublePartAugmentation(dataset=SinglePart,
+                                               txt_file=txt_file_names,
+                                               root_dir=root_dir,
+                                               resize=(64, 64),
+                                               set_part=['eyebrow1', range(2, 3), 1]
+                                               )
+eyebrow2_augmentation = DoublePartAugmentation(dataset=SinglePart,
+                                               txt_file=txt_file_names,
+                                               root_dir=root_dir,
+                                               resize=(64, 64),
+                                               set_part=['eyebrow2', range(3, 4), 1],
+                                               with_flip=True
+                                               )
+nose_dataset = nose_augmentation.get_dataset()
+mouth_dataset = mouth_augmentation.get_dataset()
+eye1_dataset = eye1_augmentation.get_dataset()
+eye2_dataset = eye2_augmentation.get_dataset()
+eyebrow1_dataset = eyebrow1_augmentation.get_dataset()
+eyebrow2_dataset = eyebrow2_augmentation.get_dataset()
+
+
+"""     
+_______________________________________________________________
+"""
 # _____________________________________
 
 eyes_dataset = {x: ConcatDataset([eye1_dataset[x], eye2_dataset[x]])
@@ -107,59 +133,84 @@ data_lodaers = {model_name_list[0]: eyebrows_train_loader,
                  model_name_list[2]: nose_train_loader,
                  model_name_list[3]: mouth_train_loader
                  }
-
-
-class Stage2FaceModel(FaceModel):
-
-    def set_label_channels(self, lable_channel_size):
-        self.lable_channel_size = lable_channel_size
-        # last conv layer1     input channels:8     output channels:2L+8
-        self.last_conv1 = nn.Conv2d(in_channels=self.first_channels_size[0],
-                                    out_channels=2 * self.lable_channel_size + 8,
-                                    kernel_size=self.kernel_size, stride=1,
-                                    padding=self.kernel_size // 2)
-        self.last_con1_bnm = nn.BatchNorm2d(2 * self.lable_channel_size + 8)
-
-        # last conv layer2     input channels:2L+8  output channels:L channels
-        self.last_conv2 = nn.Conv2d(in_channels=2 * self.lable_channel_size + 8,
-                                    out_channels=self.lable_channel_size,
-                                    kernel_size=self.kernel_size, stride=1,
-                                    padding=self.kernel_size // 2)
-        self.last_con2_bnm = nn.BatchNorm2d(self.lable_channel_size)
-
-        # last conv layer3     input channels:L  output channels:L channels
-        self.last_conv3 = nn.Conv2d(in_channels=self.lable_channel_size,
-                                    out_channels=self.lable_channel_size,
-                                    kernel_size=self.last_kernel_size,
-                                    stride=1,
-                                    padding=self.last_kernel_size // 2)
-        self.last_conv3_bnm = nn.BatchNorm2d(self.lable_channel_size)
+Writer = SummaryWriter('log')
 
 class StageTwoTrain(TemplateModel):
     def train_loss(self, batch):
         x, y = batch['image'].float().to(self.device), batch['labels'].float().to(self.device)
         pred = self.model(x)
-        loss = self.criterion(pred, y)
+        # loss = self.criterion(pred, y)
+        loss = self.criterion(pred, y.argmax(dim=1, keepdim=False))
 
         return loss, None
+
     def eval_error(self):
-        xs, ys, preds = [], [], []
+        loss_list = []
         for batch in self.eval_loader:
-            x, y = batch['image'], batch['labels']
-            x = x.float().to(self.device)
-            y = y.float().to(self.device)
+            x, y = batch['image'].float().to(self.device), batch['labels'].float().to(self.device)
             pred = self.model(x)
+            error = self.criterion(pred, y.argmax(dim=1, keepdim=False))
 
-            xs.append(x.cpu())
-            ys.append(y.cpu())
-            preds.append(pred.cpu())
+            loss_list.append(error)
 
-        xs = torch.cat(xs, dim=0)
-        ys = torch.cat(ys, dim=0)
-        preds = torch.cat(preds, dim=0)
-        error = self.criterion(preds, ys)
+        return np.mean(loss_list), None
 
-        return error, None
+    def eval_accu(self):
+        accu_list = []
+        for batch in self.eval_loader:
+            x, y = batch['image'].float().to(self.device), batch['labels'].float().to(self.device)
+            pred = self.model(x)
+            accu = self.metric(pred, y)
+            # error = self.criterion(pred, y.argmax(dim=1, keepdim=False))
+
+            accu_list.append(accu)
+
+        return np.mean(accu_list), None
+
+    def train(self):
+        self.model.train()
+        self.epoch += 1
+        for batch in self.train_loader:
+            self.step += 1
+            self.optimizer.zero_grad()
+
+            loss, others = self.train_loss(batch)
+
+            loss.backward()
+            self.optimizer.step()
+
+            if self.step % self.display_freq == 0:
+                self.writer.add_scalar('loss_%s' % self.mode, loss.item(), self.step)
+                print('epoch {}\tstep {}\tloss {:.3}'.format(self.epoch, self.step, loss.item()))
+                if self.train_logger:
+                    self.train_logger(self.writer, others)
+
+    def eval(self):
+        self.model.eval()
+        accu, others = self.eval_accu()
+
+        if accu > self.best_accu:
+            self.best_accu = accu
+            self.save_state(osp.join(self.ckpt_dir, 'best.pth.tar'), False)
+        self.save_state(osp.join(self.ckpt_dir, '{}.pth.tar'.format(self.epoch)))
+        self.writer.add_scalar('accu_%s' % self.mode, accu, self.epoch)
+        print('epoch {}\taccu {:.3}\tbest_accu {:.3}'.format(self.epoch, accu, self.best_accu))
+
+        if self.eval_logger:
+            self.eval_logger(self.writer, others)
+    # def eval(self):
+    #     self.model.eval()
+    #     error, others = self.eval_error()
+    #
+    #     if error < self.best_error:
+    #         self.best_error = error
+    #         self.save_state(osp.join(self.ckpt_dir, 'best.pth.tar'), False)
+    #     self.save_state(osp.join(self.ckpt_dir, '{}.pth.tar'.format(self.epoch)))
+    #     self.writer.add_scalar('error_%s' % self.mode, error, self.epoch)
+    #     print('epoch {}\terror {:.3}\tbest_error {:.3}'.format(self.epoch, error, self.best_error))
+    #
+    #     if self.eval_logger:
+    #         self.eval_logger(self.writer, others)
 
 
 class EyebrowTrain(StageTwoTrain):
@@ -170,9 +221,9 @@ class EyebrowTrain(StageTwoTrain):
         self.train_logger = None
         self.eval_logger = None
         self.args = argus
-
+        self.mode = 'eyebrow'
         # ============== neccessary ===============
-        self.writer = SummaryWriter('log')
+        self.writer = Writer
         self.step = 0
         self.epoch = 0
         self.best_error = float('Inf')
@@ -184,9 +235,10 @@ class EyebrowTrain(StageTwoTrain):
         self.model = self.model.to(self.device)
         # self.optimizer = optim.SGD(self.model.parameters(), self.args.lr,  momentum=0.9, weight_decay=0.0)
         self.optimizer = optim.Adam(self.model.parameters(), self.args.lr)
-        # self.criterion = nn.CrossEntropyLoss()
-        self.criterion = nn.BCEWithLogitsLoss()
-        self.metric = nn.CrossEntropyLoss()
+        self.criterion = nn.CrossEntropyLoss()
+        # self.criterion = nn.BCEWithLogitsLoss()
+        # self.metric = nn.CrossEntropyLoss()
+        self.metric = F1Accuracy()
         self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.5)
 
         self.train_loader = data_lodaers['eyebrows']['train']
@@ -207,9 +259,10 @@ class EyeTrain(StageTwoTrain):
         self.train_logger = None
         self.eval_logger = None
         self.args = argus
+        self.mode = 'eye'
 
         # ============== neccessary ===============
-        self.writer = SummaryWriter('log')
+        self.writer = Writer
         self.step = 0
         self.epoch = 0
         self.best_error = float('Inf')
@@ -221,9 +274,9 @@ class EyeTrain(StageTwoTrain):
         self.model = self.model.to(self.device)
         # self.optimizer = optim.SGD(self.model.parameters(), self.args.lr,  momentum=0.9, weight_decay=0.0)
         self.optimizer = optim.Adam(self.model.parameters(), self.args.lr)
-        # self.criterion = nn.CrossEntropyLoss()
-        self.criterion = nn.BCEWithLogitsLoss()
-        self.metric = nn.CrossEntropyLoss()
+        self.criterion = nn.CrossEntropyLoss()
+        # self.metric = nn.CrossEntropyLoss()
+        self.metric = F1Accuracy()
         self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.5)
 
         self.train_loader = data_lodaers['eyes']['train']
@@ -244,9 +297,9 @@ class NoseTrain(StageTwoTrain):
         self.train_logger = None
         self.eval_logger = None
         self.args = argus
-
+        self.mode = 'nose'
         # ============== neccessary ===============
-        self.writer = SummaryWriter('log')
+        self.writer = Writer
         self.step = 0
         self.epoch = 0
         self.best_error = float('Inf')
@@ -258,9 +311,10 @@ class NoseTrain(StageTwoTrain):
         self.model = self.model.to(self.device)
         # self.optimizer = optim.SGD(self.model.parameters(), self.args.lr,  momentum=0.9, weight_decay=0.0)
         self.optimizer = optim.Adam(self.model.parameters(), self.args.lr)
-        # self.criterion = nn.CrossEntropyLoss()
-        self.criterion = nn.BCEWithLogitsLoss()
-        self.metric = nn.CrossEntropyLoss()
+        self.criterion = nn.CrossEntropyLoss()
+        # self.criterion = nn.BCEWithLogitsLoss()
+        # self.metric = nn.CrossEntropyLoss()
+        self.metric = F1Accuracy()
         self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.5)
 
         self.train_loader = data_lodaers['nose']['train']
@@ -276,14 +330,14 @@ class NoseTrain(StageTwoTrain):
 class MouthTrain(StageTwoTrain):
     def __init__(self, argus=args):
         super(MouthTrain, self).__init__()
-        self.label_channels = 6
+        self.label_channels = 4
         # ============== not neccessary ===============
         self.train_logger = None
         self.eval_logger = None
         self.args = argus
-
+        self.mode = 'mouth'
         # ============== neccessary ===============
-        self.writer = SummaryWriter('log')
+        self.writer = Writer
         self.step = 0
         self.epoch = 0
         self.best_error = float('Inf')
@@ -295,9 +349,10 @@ class MouthTrain(StageTwoTrain):
         self.model = self.model.to(self.device)
         # self.optimizer = optim.SGD(self.model.parameters(), self.args.lr,  momentum=0.9, weight_decay=0.0)
         self.optimizer = optim.Adam(self.model.parameters(), self.args.lr)
-        # self.criterion = nn.CrossEntropyLoss()
-        self.criterion = nn.BCEWithLogitsLoss()
-        self.metric = nn.CrossEntropyLoss()
+        self.criterion = nn.CrossEntropyLoss()
+        # self.criterion = nn.BCEWithLogitsLoss()
+        # self.metric = nn.CrossEntropyLoss()
+        self.metric = F1Accuracy()
         self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=5, gamma=0.5)
 
         self.train_loader = data_lodaers['mouth']['train']
@@ -316,6 +371,7 @@ def start_train():
              model_name_list[2]: NoseTrain(args),
              model_name_list[3]: MouthTrain(args)
     }
+
     for x in model_name_list:
         print("Train %s patch Now" % x)
         for epoch in range(args.epochs):
