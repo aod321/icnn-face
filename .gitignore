@@ -9,7 +9,8 @@ Desktop.ini
 *.egg-info
 dist
 build
-
+tmp
+res
 .idea
 
 # My configurations:
@@ -27,10 +28,9 @@ __pycache__
 utils.py
 log
 venv
-res
 .vscode
 stage2_res
 model_origin.py
 test_centroids_remap.py
 mean_std_calc.py
-
+others

@@ -1,20 +1,20 @@
-from template import TemplateModel
+from utils.template import TemplateModel
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-from model_1 import FaceModel
+from models.model_1 import FaceModel
 # from es_model import ICNN
 from torch.utils.data import DataLoader
-from dataset import HelenDataset
-from Helen_transform import Resize, ToPILImage, ToTensor, Normalize, RandomRotation, \
+from datasets.dataset import HelenDataset
+from datasets.Helen_transform import Resize, ToPILImage, ToTensor, Normalize, RandomRotation, \
     RandomResizedCrop, CenterCrop, LabelsToOneHot
 from torchvision import transforms
 import argparse
 import numpy as np
 from tensorboardX import SummaryWriter
 import tensorboardX as tb
-from dataset import Stage1Augmentation
+from datasets.dataset import Stage1Augmentation
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--batch_size", default=16, type=int, help="Batch size to use during training.")

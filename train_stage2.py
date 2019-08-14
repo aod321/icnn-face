@@ -1,12 +1,12 @@
-from template import TemplateModel, F1Accuracy
+from utils.template import TemplateModel, F1Accuracy
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from model_1 import FaceModel, Stage2FaceModel
+from models.model_1 import FaceModel, Stage2FaceModel
 # from es_model import ICNN
 from torch.utils.data import DataLoader, ConcatDataset
-from dataset import HelenDataset, SinglePart, SinglepartAugmentation, DoublePartAugmentation
-from Helen_transform import Resize, ToPILImage, ToTensor, Normalize, HorizontalFlip, \
+from datasets.dataset import HelenDataset, SinglePart, SinglepartAugmentation, DoublePartAugmentation
+from datasets.Helen_transform import Resize, ToPILImage, ToTensor, Normalize, HorizontalFlip, \
                                 RandomResizedCrop, CenterCrop, LabelsToOneHot
 from torchvision import transforms
 import argparse

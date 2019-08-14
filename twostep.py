@@ -1,8 +1,8 @@
 from torchvision import transforms
-from dataset import HelenDataset, SinglePart, TestStage, TestStage1, TestStage2
-from Helen_transform import ToPILImage, ToTensor
-from model_1 import FaceModel, Stage2FaceModel
-from visualize import save_mask_result, show_mask, apply_mask, random_colors, imshow
+from datasets.dataset import HelenDataset, SinglePart, TestStage, TestStage1, TestStage2
+from datasets.Helen_transform import ToPILImage, ToTensor
+from models.model_1 import FaceModel, Stage2FaceModel
+from utils.visualize import save_mask_result, show_mask, apply_mask, random_colors, imshow
 import torchvision, torch
 import torchvision.transforms.functional as TF
 import matplotlib.pyplot as plt
@@ -73,7 +73,7 @@ class TwoStepTest(object):
             labels = sample_batched['labels'].to(device)
             idx = sample_batched['index']
             self.teststage1.get_predict(self.teststage1.model, img)
-            self.calculate_centroids(idx, self.teststage1.predict)
+            calculate_centroids(idx, self.teststage1.predict)
             # Centroids 10 x 9 x 2
 
     def single_image_test(self, img):
@@ -363,7 +363,7 @@ class TwoStepTest(object):
         self.centroids = torch.cat(centroids_list, 0)  # (10, 9, 2)
         return self.centroids
 
-image = np.array(io.imread('test_2.jpg'))
+image = np.array(io.imread('test.jpg'))
 h, w, n = image.shape
 image = TF.to_pil_image(image)
 if w > 600 or h > 600:
