@@ -11,7 +11,7 @@ root_dir = '/home/yinzi/Downloads/datas'
 txt_file = 'testing.txt'
 # root_dir_2 = "/data1/yinzi/facial_parts"
 root_dir_2 = "/home/yinzi/data/facial_parts"
-state_file_root = "/home/yinzi/test_model_5/"
+state_file_root = "/home/yinzi/test_model_7/"
 state_file_1 = os.path.join(state_file_root,
                             "stage1.pth.tar")
 state_file_2 = {x: os.path.join(state_file_root,
@@ -22,7 +22,7 @@ state_file_2 = {x: os.path.join(state_file_root,
 # teststage1 = TestStage1(device=device, model_class=FaceModel,
 #                         statefile=state_file_1, dataset_class=HelenDataset,
 #                         txt_file=txt_file, root_dir=root_dir,
-#                         batch_size=4)
+#                         batch_size=16)
 #
 # teststage1.start_test()
 

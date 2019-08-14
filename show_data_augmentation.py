@@ -1,13 +1,14 @@
 import torchvision
 from torch.utils.data import DataLoader, ConcatDataset
-from dataset import HelenDataset, SinglePart, SinglepartAugmentation, DoublePartAugmentation
+from dataset import HelenDataset, SinglePart, Stage1Augmentation, SinglepartAugmentation, DoublePartAugmentation
 from Helen_transform import Resize, ToPILImage, ToTensor, Normalize, RandomRotation, \
                                 RandomResizedCrop, HorizontalFlip, LabelsToOneHot,\
                                 GaussianNoise, RandomAffine
 import numpy as np
 import matplotlib.pyplot as plt
-
+import cv2
 root_dir = '/home/yinzi/Downloads/datas'
+root_dir_2 = "/home/yinzi/data/facial_parts"
 
 txt_file_names = {
     'train': "exemplars.txt",
@@ -22,7 +23,7 @@ transforms_all = [
 ]
 
 # Stage 1 augmentation
-stage1_augmentation = SinglepartAugmentation(dataset=HelenDataset,
+stage1_augmentation = Stage1Augmentation(dataset=HelenDataset,
                                                 txt_file=txt_file_names,
                                                 root_dir=root_dir,
                                                 resize=(64, 64)
@@ -33,6 +34,7 @@ stage1_dataloaders = {x: DataLoader(enhaced_stage1_datasets[x], batch_size=16,
                for x in ['train', 'val']}
 
 stage1_dataset_sizes = {x: len(enhaced_stage1_datasets[x]) for x in ['train', 'val']}
+
 nose_augmentation = SinglepartAugmentation(dataset=SinglePart,
                                            txt_file=txt_file_names,
                                            root_dir=root_dir,
@@ -44,32 +46,32 @@ nose_augmentation = SinglepartAugmentation(dataset=SinglePart,
 
 mouth_augmentation = SinglepartAugmentation(dataset=SinglePart,
                                             txt_file=txt_file_names,
-                                            root_dir=root_dir,
+                                            root_dir=root_dir_2,
                                             resize=(80, 80),
                                             set_part=['mouth', range(7, 10), 3]
                                             )
 eye1_augmentation = DoublePartAugmentation(dataset=SinglePart,
                                            txt_file=txt_file_names,
-                                           root_dir=root_dir,
+                                           root_dir=root_dir_2,
                                            resize=(64, 64),
                                            set_part=['eye1', range(4, 5), 1]
                                            )
 eye2_augmentation = DoublePartAugmentation(dataset=SinglePart,
                                            txt_file=txt_file_names,
-                                           root_dir=root_dir,
+                                           root_dir=root_dir_2,
                                            resize=(64, 64),
                                            set_part=['eye2', range(5, 6), 1],
                                            with_flip=True
                                            )
 eyebrow1_augmentation = DoublePartAugmentation(dataset=SinglePart,
                                                txt_file=txt_file_names,
-                                               root_dir=root_dir,
+                                               root_dir=root_dir_2,
                                                resize=(64, 64),
                                                set_part=['eyebrow1', range(2, 3), 1]
                                                )
 eyebrow2_augmentation = DoublePartAugmentation(dataset=SinglePart,
                                                txt_file=txt_file_names,
-                                               root_dir=root_dir,
+                                               root_dir=root_dir_2,
                                                resize=(64, 64),
                                                set_part=['eyebrow2', range(3, 4), 1],
                                                with_flip=True
@@ -86,6 +88,10 @@ eyes_dataset = {x: ConcatDataset([eye1_dataset[x], eye2_dataset[x]])
 eyebrows_dataset = {x: ConcatDataset([eyebrow1_dataset[x], eyebrow2_dataset[x]])
                       for x in ['train', 'val']}
 
+
+dataloaders =  {x: DataLoader(mouth_dataset[x], batch_size=16,
+                             shuffle=True, num_workers=4)
+               for x in ['train', 'val']}
 #   Test Stage1 augmentation
 
 def imshow(inp, title=None):
@@ -102,8 +108,18 @@ def imshow(inp, title=None):
 batch = next(iter(stage1_dataloaders['train']))
 # for batch in dataloaders['train']:
 inputs = batch['image']
+labels = batch['labels']
 # Make a grid from batch
+print(inputs.shape)
 out = torchvision.utils.make_grid(inputs)
 imshow(out)
 
+# Uncomment to check whether labels are correct
+
+# np_labels = labels.detach().cpu().numpy()
+# np_labels = np.array(np_labels,dtype=np.float32)
+# for i in range(16):
+#     cv2.imshow("%d"%i, np_labels[i][0])
+#     cv2.waitKey()
+#
 

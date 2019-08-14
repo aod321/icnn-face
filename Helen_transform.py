@@ -6,6 +6,8 @@ import cv2 as cv
 import numpy as np
 import random
 from skimage.util import random_noise
+from PIL import ImageFilter, Image
+
 
 class Resize(transforms.Resize):
     """Resize the input PIL Image to the given size.
@@ -22,9 +24,9 @@ class Resize(transforms.Resize):
         """
         image, labels = sample['image'], sample['labels']
 
-        resized_image = TF.resize(image, self.size, self.interpolation)
+        resized_image = TF.resize(image, self.size, Image.ANTIALIAS)
 
-        resized_labels = [TF.resize(labels[r], self.size, self.interpolation)
+        resized_labels = [TF.resize(labels[r], self.size, Image.ANTIALIAS)
                           for r in range(len(labels))
                           ]
 
@@ -357,6 +359,20 @@ class GaussianNoise(object):
         img = np.array(img, np.uint8)
         img = random_noise(img)
         img = TF.to_pil_image(np.uint8(255 * img))
+        sample = {'image': img,
+                  'labels': labels,
+                  'index': sample['index']
+                  }
+
+        return sample
+
+
+class Blurfilter(object):
+    # img: PIL image
+    def __call__(self, sample):
+
+        img, labels = sample['image'], sample['labels']
+        img = img.filter(ImageFilter.BLUR)
         sample = {'image': img,
                   'labels': labels,
                   'index': sample['index']

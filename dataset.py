@@ -1,4 +1,5 @@
 import numpy as np
+import random
 import os
 from torch.utils.data import Dataset
 from skimage import io
@@ -10,15 +11,19 @@ import torch.nn.functional as F
 import torchvision
 from torch.utils.data import DataLoader, ConcatDataset
 from Helen_transform import Resize, ToPILImage, ToTensor, Normalize, RandomRotation, \
-    RandomResizedCrop, HorizontalFlip, LabelsToOneHot, \
+    RandomResizedCrop, HorizontalFlip, LabelsToOneHot, Blurfilter, \
     GaussianNoise, RandomAffine
 from torchvision import transforms
 import numpy as np
-from visualize import show_mask, save_mask_result
+from visualize import show_mask, save_mask_result, get_masked_image, imshow, calc_centroid, random_colors
+from PIL import Image, ImageDraw
+import math
 import cv2
 import matplotlib.pyplot as plt
 from model_1 import FaceModel, Stage2FaceModel
+
 np.set_printoptions(threshold=np.inf)
+
 
 class HelenDataset(Dataset):
     # HelenDataset
@@ -106,7 +111,7 @@ class SinglePart(Dataset):
                    for i in bg_range]
         image = np.array(io.imread(part_path))
         labels = np.array([io.imread(labels_path[i]) for i in range(self.label_numbers)])  # [L, 64, 64]
-        bg = 255 - np.sum(labels, axis=0, keepdims=True) # [1, 64, 64]
+        bg = 255 - np.sum(labels, axis=0, keepdims=True)  # [1, 64, 64]
         labels = np.concatenate([bg, labels], axis=0)  # [L + 1, 64, 64]
         labels = np.uint8(labels)
         # labels = {'fg': labels,
@@ -122,8 +127,10 @@ class SinglePart(Dataset):
             sample = {'image': img, 'labels': new_label, 'index': idx}
         return sample
 
+
 class Stage1Augmentation(object):
-    def __init__(self, dataset, txt_file, root_dir, resize):
+    def __init__(self, dataset, txt_file, root_dir, resize,
+                 set_part=None, with_flip=False):
         self.augmentation_name = ['origin', 'choice1', 'choice2', 'choice3', 'choice4']
         self.randomchoice = None
         self.transforms = None
@@ -133,15 +140,17 @@ class Stage1Augmentation(object):
         self.root_dir = root_dir
         self.resize = resize
         self.set_choice()
+        self.set_part = set_part
+        self.with_flip = with_flip
         self.set_transformers()
         self.set_transforms_list()
 
     def set_choice(self):
         choice = {
-            # random_choice 1:  h_flip, rotaion, h_flip + rotation + scale_translate (random_order)
-            self.augmentation_name[1]: [HorizontalFlip(),
+            # random_choice 1:  Blur, rotaion, Blur + rotation + scale_translate (random_order)
+            self.augmentation_name[1]: [Blurfilter(),
                                         RandomRotation(15),
-                                        transforms.RandomOrder([HorizontalFlip(),
+                                        transforms.RandomOrder([Blurfilter(),
                                                                 RandomRotation(15),
                                                                 RandomAffine(degrees=0, translate=(0.01, 0.1),
                                                                              scale=(0.9, 1.1))
@@ -159,9 +168,9 @@ class Stage1Augmentation(object):
                                                                 ]
                                                                )
                                         ],
-            # random_choice 3:  noise + h_flip , noise + rotation ,noise + h_flip + rotation_scale_translate
+            # random_choice 3:  noise + blur , noise + rotation ,noise + blur + rotation_scale_translate
             self.augmentation_name[3]: [transforms.RandomOrder([GaussianNoise(),
-                                                                HorizontalFlip()
+                                                                Blurfilter()
                                                                 ]
                                                                ),
                                         transforms.RandomOrder([GaussianNoise(),
@@ -169,23 +178,23 @@ class Stage1Augmentation(object):
                                                                 ]
                                                                ),
                                         transforms.RandomOrder([GaussianNoise(),
-                                                                HorizontalFlip(),
+                                                                Blurfilter(),
                                                                 RandomAffine(degrees=15, translate=(0.01, 0.1),
                                                                              scale=(0.9, 1.1))
                                                                 ]
                                                                )
                                         ],
-            # random_choice 4:  noise + crop , h_flip + crop ,noise + h_flip + crop + rotation_scale_translate
+            # random_choice 4:  noise + crop , blur + crop ,noise + blur + crop + rotation_scale_translate
             self.augmentation_name[4]: [transforms.RandomOrder([GaussianNoise(),
                                                                 RandomResizedCrop((64, 64), scale=(0.9, 1.1))
                                                                 ]
                                                                ),
-                                        transforms.RandomOrder([HorizontalFlip(),
-                                                                RandomResizedCrop((64, 64), scale=(0.9, 1.1))
-                                                                ]
-                                                               ),
+                                        transforms.Compose([Blurfilter(),
+                                                            RandomResizedCrop((64, 64), scale=(0.9, 1.1))
+                                                            ]
+                                                           ),
                                         transforms.RandomOrder([GaussianNoise(),
-                                                                HorizontalFlip(),
+                                                                Blurfilter(),
                                                                 RandomResizedCrop((64, 64), scale=(0.9, 1.1)),
                                                                 RandomAffine(degrees=15, translate=(0.01, 0.1),
                                                                              scale=(0.9, 1.1))
@@ -270,6 +279,65 @@ class SinglepartAugmentation(Stage1Augmentation):
         self.set_part = set_part
         self.with_flip = with_flip
 
+    def set_choice(self):
+        choice = {
+            # random_choice 1:  h_flip, rotaion, h_flip + rotation + scale_translate (random_order)
+            self.augmentation_name[1]: [HorizontalFlip(),
+                                        RandomRotation(15),
+                                        transforms.RandomOrder([HorizontalFlip(),
+                                                                RandomRotation(15),
+                                                                RandomAffine(degrees=0, translate=(0.01, 0.1),
+                                                                             scale=(0.9, 1.1))
+                                                                ]
+                                                               )
+                                        ],
+            # random_choice 2:  noise, crop, noise + crop + rotation_scale_translate (random_order)
+            self.augmentation_name[2]: [GaussianNoise(),
+                                        RandomResizedCrop((64, 64), scale=(0.9, 1.1)),
+                                        RandomAffine(degrees=15, translate=(0.01, 0.1), scale=(0.9, 1.1)),
+                                        transforms.RandomOrder([GaussianNoise(),
+                                                                RandomResizedCrop((64, 64), scale=(0.9, 1.1)),
+                                                                RandomAffine(degrees=15, translate=(0.01, 0.1),
+                                                                             scale=(0.9, 1.1))
+                                                                ]
+                                                               )
+                                        ],
+            # random_choice 3:  noise + h_flip , noise + rotation ,noise + h_flip + rotation_scale_translate
+            self.augmentation_name[3]: [transforms.RandomOrder([GaussianNoise(),
+                                                                HorizontalFlip()
+                                                                ]
+                                                               ),
+                                        transforms.RandomOrder([GaussianNoise(),
+                                                                RandomRotation(15)
+                                                                ]
+                                                               ),
+                                        transforms.RandomOrder([GaussianNoise(),
+                                                                HorizontalFlip(),
+                                                                RandomAffine(degrees=15, translate=(0.01, 0.1),
+                                                                             scale=(0.9, 1.1))
+                                                                ]
+                                                               )
+                                        ],
+            # random_choice 4:  noise + crop , h_flip + crop ,noise + h_flip + crop + rotation_scale_translate
+            self.augmentation_name[4]: [transforms.RandomOrder([GaussianNoise(),
+                                                                RandomResizedCrop((64, 64), scale=(0.9, 1.1))
+                                                                ]
+                                                               ),
+                                        transforms.RandomOrder([HorizontalFlip(),
+                                                                RandomResizedCrop((64, 64), scale=(0.9, 1.1))
+                                                                ]
+                                                               ),
+                                        transforms.RandomOrder([GaussianNoise(),
+                                                                HorizontalFlip(),
+                                                                RandomResizedCrop((64, 64), scale=(0.9, 1.1)),
+                                                                RandomAffine(degrees=15, translate=(0.01, 0.1),
+                                                                             scale=(0.9, 1.1))
+                                                                ]
+                                                               )
+                                        ]
+        }
+        self.randomchoice = choice
+
     def get_dataset(self):
         datasets = {'train': [self.dataset(txt_file=self.txt_file['train'],
                                            root_dir=self.root_dir,
@@ -295,6 +363,13 @@ class SinglepartAugmentation(Stage1Augmentation):
 
 
 class DoublePartAugmentation(SinglepartAugmentation):
+    def __init__(self, dataset, txt_file, root_dir, resize,
+                 set_part=None, with_flip=False):
+        super(DoublePartAugmentation, self).__init__(dataset, txt_file, root_dir, resize,
+                                                     set_part=set_part, with_flip=with_flip)
+        self.set_part = set_part
+        self.with_flip = with_flip
+
     def set_choice(self):
         choice = {  # rotation , rotation + affine (random_order)
             self.augmentation_name[1]: [
@@ -456,7 +531,7 @@ class TestStage(object):
         self.dataset = None
         self.txt_file = txt_file
         self.root_dir = root_dir
-        self.batch_size =batch_size
+        self.batch_size = batch_size
         self.is_shuffle = is_shuffle
         self.num_workers = num_workers
 
@@ -475,13 +550,23 @@ class TestStage(object):
 
     def get_predict(self, model, image):
         self.predict = torch.softmax(model(image.to(self.device)), 1)
+        return self.predict
+
+    def get_predict_onehot(self, model, image):
+        predict = torch.softmax(model(image.to(self.device)), 1)
+        # predict Shape(N, 2, 64, 64) or (N, 4, 80, 80)
+        refer = predict.argmax(dim=1, keepdim=False)  # Shape(N, 64, 64) or Shape(N, 80, 80)
+        for i in range(predict.shape[1]):
+            predict[:, i] = (refer == i).float()
+        return predict
+
 
 class TestStage1(TestStage):
     def __init__(self, device, model_class, statefile,
                  dataset_class, txt_file, root_dir, batch_size):
         super(TestStage1, self).__init__(device, model_class, statefile,
-                                        dataset_class, txt_file, root_dir, batch_size)
-        self.F1_name_list = ['eyebrow1','eyebrow2',
+                                         dataset_class, txt_file, root_dir, batch_size)
+        self.F1_name_list = ['eyebrow1', 'eyebrow2',
                              'eye1', 'eye2',
                              'nose', 'u_lip', 'i_mouth', 'l_lip']
         self.model_name_list = ['eyebrows', 'eyes', 'nose', 'mouth']
@@ -499,11 +584,12 @@ class TestStage1(TestStage):
         self.precision = {x: 0.0
                           for x in self.F1_name_list}
         self.F1_list = {x: []
-                   for x in self.F1_name_list}
+                        for x in self.F1_name_list}
         self.F1 = {x: 0.0
                    for x in self.F1_name_list}
         self.load_model()
         self.load_dataset()
+
     def load_dataset(self):
         self.dataset = self.dataset_class(txt_file='testing.txt',
                                           root_dir=self.root_dir,
@@ -516,18 +602,51 @@ class TestStage1(TestStage):
         self.dataloader = DataLoader(self.dataset, batch_size=self.batch_size,
                                      shuffle=self.is_shuffle, num_workers=self.num_workers)
 
+    def show_centroids(self, batch, preds):
+        # Input img Shape(N, 3, H, W) labels Shape(N,C,H,W) centroids Shape(N, C, 2)
+        img, labels = batch['image'], batch['labels']
+        pred_arg = preds.argmax(dim=1, keepdim=False)
+        binary_list = []
+        for i in range(preds.shape[1]):
+            binary = (pred_arg == i).float()
+            binary_list.append(binary)
+        preds = torch.stack(binary_list, dim=1)
+        pred_centroids = calc_centroid(preds)
+        true_centroids = calc_centroid(labels)
+        n = img.shape[0]
+        c = pred_centroids.shape[1]
+        image_list = []
+        for i in range(n):
+            image = TF.to_pil_image(img[i])
+            draw = ImageDraw.Draw(image)
+            # for j in range(c):
+            #     y_1 = torch.floor(true_centroids[i][j][0]).int().tolist()
+            #     x_1 = torch.floor(true_centroids[i][j][1]).int().tolist()
+            #     draw.point((x_1, y_1), fill=(0, 255, 0))
+            for k in range(c):
+                y_2 = torch.floor(pred_centroids[i][k][0]).int().tolist()
+                x_2 = torch.floor(pred_centroids[i][k][1]).int().tolist()
+                draw.point((x_2, y_2), fill=(255, 0, 0))
+            image_list.append(TF.to_tensor(image))
+        out = torch.stack(image_list)
+        out = torchvision.utils.make_grid(out)
+        imshow(out)
+
+
+
     def start_test(self):
         for i_batch, sample_batched in enumerate(self.dataloader):
             img = sample_batched['image'].to(self.device)
             labels = sample_batched['labels'].to(self.device)
             self.get_predict(self.model, img)
+            self.show_centroids(sample_batched, self.predict)
             show_mask(img, self.predict)
         #     self.calc_f1(predict=self.predict, labels=labels)
         # self.output_f1_score()
 
     def calc_f1(self, predict, labels):
-        part_name_list = {1: 'eyebrow1', 2: 'eyebrow2', 3: 'eye1', 4:'eye2',
-                          5: 'nose', 6:'u_lip', 7:'i_mouth', 8:'l_lip'}
+        part_name_list = {1: 'eyebrow1', 2: 'eyebrow2', 3: 'eye1', 4: 'eye2',
+                          5: 'nose', 6: 'u_lip', 7: 'i_mouth', 8: 'l_lip'}
         pred = predict.argmax(dim=1, keepdim=False).to(self.device)
         ground = labels.argmax(dim=1, keepdim=False).to(self.device)
         for i in range(1, labels.shape[1]):
@@ -540,30 +659,15 @@ class TestStage1(TestStage):
                     self.TP[r] + self.FP[r])
             self.precision[r] = self.TP[r] / (
                     self.TP[r] + self.FN[r])
-            self.F1_list[r].append((2 * self.precision[r] * self.recall[r]) / \
+            self.F1_list[r].append((2 * self.precision[r] * self.recall[r]) /
                                    (self.precision[r] + self.recall[r]))
+        return self.F1_list, self.recall, self.precision
 
     def output_f1_score(self):
         print("Stage1 F1_scores:")
         for r in self.F1_name_list:
             self.F1[r] = np.array(self.F1_list[r]).mean()
-            print("{}:{}\t".format(r,self.F1[r]))
-
-    def save_result(self, x, image, predict):
-        binary_list = []
-        predic_argm = predict.argmax(dim=1, keepdim=False)
-        for i in range(predict.shape[1]):
-            binary = (predic_argm == i)
-            binary_list.append(binary)
-        pred = torch.stack(binary_list, dim=1)
-        pred = pred.detach().cpu().numpy()
-        sample = {'image': image,
-                  'labels': pred}
-        masked_image = get_masked_image(sample)
-        out = torchvision.utils.make_grid(masked_image)
-        imshow(out)
-
-
+            print("{}:{}\t".format(r, self.F1[r]))
 
 
 class TestStage2(TestStage):
@@ -586,14 +690,14 @@ class TestStage2(TestStage):
         self.precision = {x: 0.0
                           for x in self.F1_name_list}
         self.recall_overall_list = {x: []
-                          for x in self.F1_name_list}
+                                    for x in self.F1_name_list}
         self.precision_overall_list = {x: []
-                          for x in self.F1_name_list}
+                                       for x in self.F1_name_list}
         self.recall_overall = 0.0
         self.precision_overall = 0.0
         self.F1_overall = 0.0
         self.F1_list = {x: []
-                   for x in self.F1_name_list}
+                        for x in self.F1_name_list}
         self.F1 = {x: 0.0
                    for x in self.F1_name_list}
         self.load_model()
@@ -714,9 +818,18 @@ class TestStage2(TestStage):
             self.precision_overall_list[r].append(self.precision[r])
             self.F1_list[r].append((2 * self.precision[r] * self.recall[r]) /
                                    (self.precision[r] + self.recall[r]))
+        return self.F1_list, self.recall_overall_list, self.precision_overall_list
 
-    def output_f1_score(self):
+    def output_f1_score(self, F_tuple=None):
         print("F1_socres:\n")
+        if F_tuple:
+            try:
+                f1_list, recall_overall_list, precision_overall_list = F_tuple
+                self.F1_list = f1_list
+                self.recall_overall_list = recall_overall_list
+                self.precision_overall_list = precision_overall_list
+            except Exception as ex_result:
+                print(ex_result)
         for x in self.F1_name_list:
             self.recall_overall_list[x] = np.array(self.recall_overall_list[x]).mean()
             self.precision_overall_list[x] = np.array(self.precision_overall_list[x]).mean()
@@ -727,15 +840,17 @@ class TestStage2(TestStage):
             self.precision_overall += self.precision_overall_list[x]
         self.recall_overall /= len(self.F1_name_list)
         self.precision_overall /= len(self.F1_name_list)
-        self.F1_overall = (2 * self.precision_overall * self.recall_overall) /\
+        self.F1_overall = (2 * self.precision_overall * self.recall_overall) / \
                           (self.precision_overall + self.recall_overall)
         print("{}:{}\t".format("overall", self.F1_overall))
+        return self.F1, self.F1_overall
 
     def start_test(self):
         for x in self.model_name_list:
             for i_batch, sample_batched in enumerate(self.dataloader[x]):
                 image, labels = sample_batched['image'], sample_batched['labels']
-
+                # labels Shape(N, 2, 64, 64) or Shape(N, 4, 80, 80)
+                # image Non-mouth Shape(3,64,64) or Mouth Shape(3,80,80)
                 self.get_predict(model=self.model[x],
                                  image=image)
                 self.calc_f1(x, self.predict, labels)

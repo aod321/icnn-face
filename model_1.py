@@ -5,6 +5,7 @@ import torch.nn.functional as F
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 # device = torch.device("cpu")
 
+
 class Interpolate(nn.Module):
     def __init__(self, size, mode):
         super(Interpolate, self).__init__()
@@ -15,6 +16,7 @@ class Interpolate(nn.Module):
     def forward(self, x):
         x = self.interp(x, size=self.size, mode=self.mode)
         return x
+
 
 class iCNN_Node(torch.nn.Module):
     def __init__(self):
@@ -44,7 +46,6 @@ class iCNN_Node(torch.nn.Module):
         self.conv_node_batchnorm_C = 3
         self.inter_conv_node_batchnorm_C = 3
         self.output_conv_node_batchnorm_C = 3
-
 
         self.conv_node = nn.Conv2d(in_channels=self.in_channels, out_channels=self.out_channels, kernel_size=self.
                                    kernel_size, stride=self.stride, padding=self.padding)

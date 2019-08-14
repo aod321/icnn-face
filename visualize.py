@@ -15,6 +15,19 @@ import matplotlib.lines as lines
 from matplotlib.patches import Polygon
 
 
+def calc_centroid(tensor):
+    # Inputs Shape(1, 9 , 64, 64)
+    # Return Shape(1, 9 ,2)
+    tensor = tensor.float() + 1e-10
+    n, l, h, w = tensor.shape
+    indexs_y = torch.from_numpy(np.arange(h)).float().to(tensor.device)
+    indexs_x = torch.from_numpy(np.arange(w)).float().to(tensor.device)
+    center_y = tensor.sum(3) * indexs_y.view(1, 1, -1)
+    center_y = center_y.sum(2, keepdim=True) / tensor.sum([2, 3]).view(n, l, 1)
+    center_x = tensor.sum(2) * indexs_x.view(1, 1, -1)
+    center_x = center_x.sum(2, keepdim=True) / tensor.sum([2, 3]).view(n, l, 1)
+    output = torch.cat([center_y, center_x], 2)
+    return output
 
 def random_colors(N, bright=True):
     """
@@ -40,6 +53,7 @@ def apply_mask(image, mask, color, alpha=0.5):
 
     if temp_image.dtype != np.uint8:
         temp_image = (temp_image * 255).astype(np.uint8)
+
     for c in range(3):
         temp_image[:, :, c] = np.where(mask != 0,
                                        temp_image[:, :, c] *
@@ -91,6 +105,8 @@ def ndarray_imshow(inp, title=None):
 
 def imshow(inp, title=None):
     """Imshow ."""
+    inp = inp.numpy().transpose((1, 2, 0))
+    inp = np.clip(inp, 0, 1)
     plt.imshow(inp)
     if title is not None:
         plt.title(title)
@@ -119,7 +135,7 @@ def get_masked_image(sample_batched):
     return out_img
 
 
-def show_mask(image, predict):
+def show_mask(image, predict, title=None):
     binary_list = []
     predic_argm = predict.argmax(dim=1, keepdim=False)
     for i in range(predict.shape[1]):
@@ -131,16 +147,7 @@ def show_mask(image, predict):
               'labels': pred}
     masked_image = get_masked_image(sample)
     out = torchvision.utils.make_grid(masked_image)
-    imshow(out)
-
-def imshow(inp, title=None):
-    """Imshow for Tensor."""
-    inp = inp.detach().cpu().numpy().transpose((1, 2, 0))
-    inp = np.clip(inp, 0, 1)
-    plt.imshow(inp)
-    if title is not None:
-        plt.title(title)
-    plt.pause(0.001)  # pause a bit so that plots are updated
+    imshow(out, title)
 
 def save_mask_result(count, x, image, predict):
     binary_list = []

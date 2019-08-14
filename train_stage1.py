@@ -17,7 +17,7 @@ import tensorboardX as tb
 from dataset import Stage1Augmentation
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--batch_size", default=10, type=int, help="Batch size to use during training.")
+parser.add_argument("--batch_size", default=16, type=int, help="Batch size to use during training.")
 parser.add_argument("--display_freq", default=10, type=int, help="Display frequency")
 parser.add_argument("--lr", default=0.001, type=float, help="Learning rate for optimizer")
 parser.add_argument("--epochs", default=25, type=int, help="Number of epochs to train")
