@@ -198,20 +198,6 @@ class StageTwoTrain(TemplateModel):
 
         if self.eval_logger:
             self.eval_logger(self.writer, others)
-    # def eval(self):
-    #     self.model.eval()
-    #     error, others = self.eval_error()
-    #
-    #     if error < self.best_error:
-    #         self.best_error = error
-    #         self.save_state(osp.join(self.ckpt_dir, 'best.pth.tar'), False)
-    #     self.save_state(osp.join(self.ckpt_dir, '{}.pth.tar'.format(self.epoch)))
-    #     self.writer.add_scalar('error_%s' % self.mode, error, self.epoch)
-    #     print('epoch {}\terror {:.3}\tbest_error {:.3}'.format(self.epoch, error, self.best_error))
-    #
-    #     if self.eval_logger:
-    #         self.eval_logger(self.writer, others)
-
 
 class EyebrowTrain(StageTwoTrain):
     def __init__(self, argus=args):

@@ -3,8 +3,6 @@ import os
 import os.path as osp
 
 
-
-
 class TemplateModel():
 
     def __init__(self):
@@ -142,10 +140,6 @@ class TemplateModel():
         error = self.metric(preds, ys)
 
         return error, None
-
-    # def inference(self, x):
-    #     x = x.to(self.device)
-    #     return self.model(x)
 
     def num_parameters(self):
         return sum([p.data.nelement() for p in self.model.parameters()])

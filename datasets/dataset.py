@@ -558,6 +558,7 @@ class TestStage(object):
         refer = predict.argmax(dim=1, keepdim=False)  # Shape(N, 64, 64) or Shape(N, 80, 80)
         for i in range(predict.shape[1]):
             predict[:, i] = (refer == i).float()
+        self.predict = predict
         return predict
 
 

@@ -28,7 +28,7 @@ state_file_2 = {x: os.path.join(state_file_root,
 txt_file = 'testing.txt'
 
 
-def calc_centroid_single(tensor):
+def calc_centroids(tensor):
     # Inputs Shape(1, 9 , 64, 64)
     # Return Shape(1, 9 ,2)
     tensor = tensor.float() + 1e-10
@@ -40,7 +40,7 @@ def calc_centroid_single(tensor):
     center_x = tensor.sum(2) * indexs_x.view(1, 1, -1)
     center_x = center_x.sum(2, keepdim=True) / tensor.sum([2, 3]).view(n, l, 1)
     output = torch.cat([center_y, center_x], 2)
-    print(output)
+    # print(output)
     return output
 
 
@@ -65,18 +65,31 @@ class TwoStepTest(object):
         self.model_name_list = ['eyebrows', 'eyes', 'nose', 'mouth']
         self.centroids = None
         self.final_mask = None
-        self.crop_rect_list = None
+        self.crop_rect = None
+        self.orig_img = None
 
-    def twostep_test(self):
+    def start_all_test(self):
         for i_batch, sample_batched in enumerate(self.teststage1.dataloader):
             img = sample_batched['image'].to(device)
-            labels = sample_batched['labels'].to(device)
-            idx = sample_batched['index']
-            self.teststage1.get_predict(self.teststage1.model, img)
-            calculate_centroids(idx, self.teststage1.predict)
-            # Centroids 10 x 9 x 2
+            index = sample_batched['index']
+            stage1_pred = self.teststage1.get_predict_onehot(self.teststage1.model, img)
+            self.get_stage1_centroids(index=index, stage1_pred=stage1_pred)
+            self.orig_img = {i:
+                                 self.unresized_dataset[idx]['image']
+                             for i, idx in enumerate(index)
+                             }
+            extracted_parts, crop_list = self.extract_batch_image(self.centroids, self.orig_img)
+            stage2_bacthes = self.prepare_bacthes(extracted_parts)
+            stage2_preds = self.get_stage2_predicts(stage2_bacthes)
+            stage2_results = self.get_stage2_results(stage2_preds)
+        f1 = self.get_f1_scores(stage2_preds)
+        print(f1)
+            # final_mask = self.combine_mask(orig_img=self.orig_img,
+            #                                pred_results=stage2_results,
+            #                                centroids=self.centroids)
+            # self.show_results(final_mask)
 
-    def single_image_test(self, img):
+    def single_image_test(self, img, colors=None):
         # Input Image shape(3,h,w)
         # orig_image = TF.to_tensor(TF.to_pil_image(img))
         n, h, w = img.shape
@@ -92,16 +105,17 @@ class TwoStepTest(object):
             stage1_pred[:, i] = (refer == i).float()  # Shape(1, 9, 64, 64)
         temp_resize = []
         for i in range(stage1_pred.shape[1]):
-            temp_image = TF.to_tensor(TF.resize(TF.to_pil_image(stage1_pred[0, i].detach().cpu()), (h, w))) # List 9 x Shape(H, W)
+            temp_image = TF.to_tensor(
+                TF.resize(TF.to_pil_image(stage1_pred[0, i].detach().cpu()), (h, w)))  # List 9 x Shape(H, W)
             temp_resize.append(temp_image)
         temp_resize = torch.stack(temp_resize).transpose(1, 0)
-        centroids = calc_centroid_single(temp_resize)  # Shape(1, 9, 2)
+        centroids = calc_centroids(temp_resize)  # Shape(1, 9, 2)
         orig_img = img.unsqueeze(0)
         # Extracted parts
         # Input centroids Shape(1, 9, 2) img Shape(3, H, W)
         # Output parts image Shape(1, 5, 3, 64, 64) and (1, 1, 3, 80, 80)
         extracted_parts, crop_list = self.extract_batch_image(centroids, orig_img)
-        self.crop_rect_list = crop_list
+
         # Stage2_baches Non-mouth Shape(1, 5, 3, 64, 64)  Mouth Shape(1, 1, 3, 80, 80)
         stage2_bacthes = self.prepare_bacthes(extracted_parts)
         """
@@ -114,7 +128,9 @@ class TwoStepTest(object):
         # Stage2_results not-mouth: Shape(N, 6, 64, 64) mouth: Shape(N, 4, 80, 80)
         stage2_results = self.get_stage2_results(stage2_preds)
         final_mask = self.combine_mask(orig_img, stage2_results, centroids)
-        self.show_results(orig_img, final_mask)
+        # self.show_results(orig_img, final_mask)
+        masked_image = self.get_masked_orig_img(orig_img,final_mask, colors)
+        return masked_image
 
     def get_stage2_predicts(self, stage2_bacthes):
         # Input
@@ -139,14 +155,12 @@ class TwoStepTest(object):
         # labels Shape(N, 2, 64, 64) or Shape(N, 4, 80, 80)
         for x in self.model_name_list:
             for i in range(stage2_preds[x].shape[0]):
-                # F1 {x: [f1_1, ... , f1_N]}
-                f1 = self.teststage2.calc_f1(x=x, predict=stage2_preds[i], labels=labels)
+                f1 = self.teststage2.calc_f1(x=x, predict=stage2_preds[x][i], labels=labels)
         f1_result = self.teststage2.output_f1_score(f1)
         return f1_result
 
     def get_stage2_results(self, stage2_preds):
         # eyes_pred Shape(2, N, 2, 64, 64)
-        # Nose Shape(1, N , 2, 64, 64)
         # Mouth Shape(1, N , 4, 80, 80)
 
         # Output Non-mouth Shape(N, 5, 64, 64) Mouth Shape(N, 3 ,80, 80)
@@ -179,7 +193,8 @@ class TwoStepTest(object):
         results['not_mouth'] = [stage2_results[r][:, 1].to(device)
                                 for r in ['eyebrow1', 'eyebrow2',
                                           'eye1', 'eye2', 'nose']]
-        # final results not-mouth: Shape(N, 5, 64, 64) mouth: Shape(N, 3, 80, 80        results['mouth'] = stage2_results['mouth'][1:4]  # mouth: Shape(N, 3, 80, 80))
+        # final results not-mouth: Shape(N, 5, 64, 64)
+        # mouth: Shape(N, 3, 80, 80
         results['not_mouth'] = torch.stack(results['not_mouth'], dim=0).transpose(1, 0)
         results['mouth'] = stage2_results['mouth'][:, 1:4]  # mouth: Shape(N, 3, 80, 80)
         return results
@@ -192,22 +207,22 @@ class TwoStepTest(object):
 
         # make sure orig_img is in Tensor format   (C,H,W)
         box_size = 1024
-        n, c, h, w = orig_img.shape
-        offset_h, offset_w = int((box_size - h) // 2), int((box_size - w) // 2)
+        n = len(orig_img)
         remap_mask = torch.zeros(n, 8, box_size, box_size)
         _, c_1, h_1, w_1 = pred_results['not_mouth'].shape
         _, c_2, h_2, w_2 = pred_results['mouth'].shape
-        # not_mouth_centroids = calc_centroid_single(pred_results['not_mouth'])  # Shape(N, 5, 2)
-        # mouth_centroids = calc_centroid_single(pred_results['mouth'])   # Shape(N, 3, 2)
-        # pred_centroids = torch.cat([not_mouth_centroids, mouth_centroids], dim=1)  # Shape(N, 8, 2)
+        c, h, w = orig_img[0].shape
+        offset_h, offset_w = int((box_size - h) // 2), int((box_size - w) // 2)
         for i in range(n):
+            c, h, w = orig_img[i].shape
+            offset_h, offset_w = int((box_size - h) // 2), int((box_size - w) // 2)
             # Not mouth
             for j in range(c_1):
-                h_start, w_start = self.crop_rect_list[j]
+                h_start, w_start = self.crop_rect[i][j]
                 h_start = int(h_start)
                 w_start = int(w_start)
-                np_n_mouth = pred_results['not_mouth'][i, j].detach().cpu().numpy()
-                pred_n_mouth = Image.fromarray(np_n_mouth)
+                np_n_mouth = pred_results['not_mouth'].detach().cpu().numpy()
+                pred_n_mouth = Image.fromarray(np_n_mouth[i, j])
                 left, upper, right, lower = pred_n_mouth.getbbox()
                 old_bbox = (left, upper, right, lower)
                 pred_n_mouth = pred_n_mouth.crop(old_bbox)
@@ -218,7 +233,7 @@ class TwoStepTest(object):
             # Mouth
             for j in range(c_2):
                 k = j + c_1
-                h_start, w_start = self.crop_rect_list[5]
+                h_start, w_start = self.crop_rect[i][5]
                 h_start = int(h_start)
                 w_start = int(w_start)
                 np_mouth = pred_results['mouth'][i, j].detach().cpu().numpy()
@@ -230,23 +245,23 @@ class TwoStepTest(object):
                 img1 = Image.fromarray(remap_mask[i, k].detach().cpu().numpy())
                 img1.paste(pred_mouth, box=new_bbox)
                 remap_mask[i, k] = torch.from_numpy(np.array(img1))
-
         final_mask = remap_mask[:, :, offset_h:offset_h + h, offset_w:offset_w + w]
         self.final_mask = final_mask
         return final_mask
 
-    def get_masked_orig_img(self, img, final_mask):
+    def get_masked_orig_img(self, img, final_mask, colors=None):
         # img Shape(N, 3, H, W) final_mask Shape(N, 8, H ,W)
         # Out masked_img Shape(N, 3, H, W)
         n, c, h, w = final_mask.shape
-        colors = random_colors(c)
+        if colors is None:
+            colors = random_colors(c)
         img_list = []
         for i in range(n):
             image_masked = np.array(TF.to_pil_image(img[i].detach().cpu()))
             for k in range(c):
                 color = colors[k]
                 image_masked = apply_mask(image=image_masked,
-                                          mask=final_mask[i][k], color=color, alpha=0.5)
+                                          mask=final_mask[i][k], color=color, alpha=0.4)
             image_masked = np.array(image_masked.clip(0, 255), dtype=np.uint8)
             img_list.append(TF.to_tensor(TF.to_pil_image(image_masked)))
         out_img = torch.stack(img_list)
@@ -274,24 +289,28 @@ class TwoStepTest(object):
             plt.title(title)
         plt.savefig(os.path.join(save_dir, '{}.png'.format(uuid_str)))
 
+    def extract_labels(self,):
+
     def extract_batch_image(self, cens, img):
         # Centroids Shape(N, 9, 2)   Input image Shape(N, 3, H, W)
         # get output parts image Shape(N, 5, 3, 64, 64) Shape(N, 1, 3, 80, 80)
         box_size = 1024
-        n, c, h, w = img.shape
-        offset_h, offset_w = (box_size - h) // 2, (box_size - w) // 2
-        image = torch.zeros(n, 3, box_size, box_size)
-        image[:, :, offset_h:offset_h + h, offset_w:offset_w + w] = img
+        n = len(img)
         parts = {'mouth': torch.zeros((n, 1, 3, 80, 80)),
                  'not_mouth': torch.zeros((n, 5, 3, 64, 64))}
         h_1, w_1 = 64, 64
         h_2, w_2 = 80, 80
         mouth_cen = torch.floor(cens[:, 6:9].mean(dim=1, keepdim=True))
         centroids = torch.cat([cens[:, 0:6], mouth_cen], dim=1)  # Shape(N, 7 ,2)
-        crop_rect_list = []
-        print("offset")
-        print(offset_h, offset_w)
+        temp_list = []
         for i in range(n):
+            crop_rect_list = []
+            c, h, w = img[i].shape
+            offset_h, offset_w = (box_size - h) // 2, (box_size - w) // 2
+            image = torch.zeros(3, box_size, box_size)
+            image[:, offset_h:offset_h + h, offset_w:offset_w + w] = img[i]
+            # test_show = TF.to_pil_image(image.detach().cpu())
+            # test_show.show()
             for j in range(5):
                 k = j + 1
                 index_h = centroids[i, k, 0] + offset_h
@@ -301,19 +320,25 @@ class TwoStepTest(object):
                 w_start = torch.floor(index_w - w_1 // 2).int().tolist()
                 w_end = torch.floor(index_w + w_1 // 2).int().tolist()
                 crop_rect_list.append((h_start, w_start))
-                print(j, h_start, h_end, w_start, w_end)
-                parts['not_mouth'][i, j, :] = image[i, :, h_start:h_end, w_start:w_end]
-                print(parts['not_mouth'][i, j, :].shape)
+                parts['not_mouth'][i, j, :] = image[:, h_start:h_end, w_start:w_end]
+                # print(parts['not_mouth'][i, j, :].shape)
+                # cv2.imshow('ex_%d' % j, np.array(TF.to_pil_image(parts['not_mouth'][i, j, :].detach().cpu())))
+                # cv2.waitKey()
             index_h = centroids[i, 6, 0] + offset_h
             index_w = centroids[i, 6, 1] + offset_w
             h_start = torch.floor(index_h - h_2 // 2).int().tolist()
             h_end = torch.floor(index_h + h_2 // 2).int().tolist()
             w_start = torch.floor(index_w - w_2 // 2).int().tolist()
             w_end = torch.floor(index_w + w_2 // 2).int().tolist()
-            print(h_start, h_end, w_start, w_end)
-            parts['mouth'][i, 0, :] = image[i, :, h_start:h_end, w_start:w_end]
-            crop_rect_list.append((h_start, w_start))
-        return parts, crop_rect_list
+            # print(h_start, h_end, w_start, w_end)
+            parts['mouth'][i, 0, :] = image[:, h_start:h_end, w_start:w_end]
+            # cv2.imshow('mouth', np.array(TF.to_pil_image(parts['mouth'][i, 0, :].detach().cpu())))
+            # cv2.waitKey()
+            crop_rect_list.append((h_start, w_start))  # Size: 6 x 2
+            temp_list.append(np.array(crop_rect_list))
+        crop_rect = torch.from_numpy(np.array(temp_list))  # Shape(N, 6, 2)
+        self.crop_rect = crop_rect
+        return parts, crop_rect
 
     def prepare_bacthes(self, parts):
         # Input parts not_Mouth Shape(N, 5, 3, 64, 64) and Mouth Shape(N, 1, 3, 80, 80)
@@ -325,12 +350,12 @@ class TwoStepTest(object):
         eyebrow1 = parts['not_mouth'][:, 0:1]
         eyebrow2 = parts['not_mouth'][:, 1:2]  # Shape(N, 1, 3, 64, 64)
         eyebrow2 = torch.stack([TF.to_tensor(TF.hflip(TF.to_pil_image(eyebrow2[i, 0])))
-                            for i in range(n)]).unsqueeze(1)
+                                for i in range(n)]).unsqueeze(1)
         eyebrows = torch.cat([eyebrow1, eyebrow2], dim=1)  # Shape(N, 2, 3, 64, 64)
         eye1 = parts['not_mouth'][:, 2:3]
         eye2 = parts['not_mouth'][:, 3:4]  # Shape(N, 1, 3, 64, 64)
         eye2 = torch.stack([TF.to_tensor(TF.hflip(TF.to_pil_image(eye2[i, 0])))
-                                for i in range(n)]).unsqueeze(1)
+                            for i in range(n)]).unsqueeze(1)
         eyes = torch.cat([eye1, eye2], dim=1)
         bacthes = {'eyes': eyes,
                    'eyebrows': eyebrows,
@@ -339,37 +364,68 @@ class TwoStepTest(object):
                    }
         return bacthes
 
-    def get_centroids(self, index, y):
-        inputs = y.float() + 1e-20
-        refer = y.argmax(dim=1, keepdim=False)
-        # Make predicts only have 0 and 1
-        for i in range(y.shape[1]):
-            inputs[:, i] = (refer == i)
-        inputs = inputs.float()
-        inputs = inputs.detach().cpu().numpy()
-        inputs = np.array(inputs, np.float32)
+    def get_stage1_centroids(self, index, stage1_pred):
         centroids_list = []
         for i, idx in enumerate(index):
-            n, l, h, w = self.unresized_dataset[idx]['labels']
-            temp = [cv2.resize(inputs[i][j], (w, h))
-                    for j in range(y.shape[1])]
-            temp = np.array(temp, np.float32)  # (9, h, w)
-            tensor = torch.from_numpy(temp)  # (9, h, w)
-            l1, h1, w1 = tensor.shape
-            tensor = tensor.view(1, l1, h1, w1)  # (1, 9, h, w)
-            centroids_single = calc_centroid_single(tensor)  # (1, 9, 2)
-            centroids_list.append(centroids_single)
+            orig_img = self.unresized_dataset[idx]['image']
+            n, h, w = orig_img.shape
+            # show_test = TF.to_pil_image(orig_img)
+            # np_show = nparray(show_test)
+            # cv2.imshow('show_orig', np_show)
+            # cv2.waitKey()
+            temp_image = [TF.to_tensor(
+                TF.resize(TF.to_pil_image(
+                    stage1_pred[i, j].detach().cpu()
+                ), (h, w)))
+                for j in range(stage1_pred.shape[1])]
+            temp_image = torch.stack(temp_image).transpose(1, 0)  # Shape(1, 9, H, W)
+            temp_centroids = calc_centroids(temp_image)  # Shape(1, 9, 2)
+            # for p in range(9):
+            #     y = temp_centroids[0, p, 0]
+            #     x = temp_centroids[0, p, 1]
+            #     draw = ImageDraw.Draw(show_test)
+            #     draw.point((x, y), fill=(255, 0, 0))
+            # np_show = np.array(show_test)
+            # cv2.imshow('show_after', np_show)
+            # cv2.waitKey()
+            centroids_list.append(temp_centroids)
+        centroids = torch.cat(centroids_list, 0)  # Shape(N, 9, 2)
+        self.centroids = centroids
+        return centroids
 
-        self.centroids = torch.cat(centroids_list, 0)  # (10, 9, 2)
-        return self.centroids
 
-image = np.array(io.imread('test.jpg'))
-h, w, n = image.shape
-image = TF.to_pil_image(image)
-if w > 600 or h > 600:
-    image.thumbnail((256, 256), Image.ANTIALIAS)
-image.show()
-print(image.size)
-image = TF.to_tensor(image)
+# image = np.array(io.imread('test.jpg'))
+
+def real_time():
+    two_step = TwoStepTest()
+    capture = cv2.VideoCapture(0)
+    colors = random_colors(8)
+    while True:
+        ref, frame = capture.read()
+        after = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        n , h, w = after.shape
+        after = TF.to_pil_image(after)
+        if w > 600 or h > 600:
+            after.thumbnail((400, 400), Image.ANTIALIAS)
+        after = TF.to_tensor(after)
+        masked_image = two_step.single_image_test(after, colors)
+        masked_image = np.array(TF.to_pil_image(masked_image[0]))
+        masked_image = cv2.cvtColor(masked_image, cv2.COLOR_RGB2BGR)
+        cv2.imshow('frame', masked_image)
+        c = cv2.waitKey(30) & 0xff
+        if c == 27:
+            capture.release()
+            break
+
+
 two_step = TwoStepTest()
-two_step.single_image_test(image)
+two_step.start_all_test()
+
+# h, w, n = image.shape
+# image = TF.to_pil_image(image)
+# if w > 600 or h > 600:
+#     image.thumbnail((256, 256), Image.ANTIALIAS)
+# image.show()
+# print(image.size)
+# image = TF.to_tensor(image)
+# two_step.single_image_test(image)
