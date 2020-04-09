@@ -1,10 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-
 # device = torch.device("cpu")
-
 
 class Interpolate(nn.Module):
     def __init__(self, size, mode):
@@ -132,12 +129,9 @@ class iCNN_Node(torch.nn.Module):
             feature_from_pre = self.downsample(feature_from_pre)
             # Upsample the features from the post-node
             feature_from_post = self.upsample(feature_from_post)
-            # cuda support
-            # feature_from_pre = feature_from_pre
-            # feature_from_post = feature_from_post
+
 
             # Interlink them before convolution
-            # Use Conv2d whose weight is all 1 to compute  x = feature_from_pre + x + feature_from_post
             x_out = torch.cat([feature_from_pre, x, feature_from_post], dim=1)
         else:
             if feature_from_pre is None and feature_from_post is None:
@@ -155,6 +149,7 @@ class iCNN_Node(torch.nn.Module):
         x_out = x_out.type_as(x)
         x_out = F.relu(self.inter_conv_node_batchnorm(self.inter_conv_node(input=x_out)), inplace=True)
         y = F.relu(self.conv_node_batchnorm(self.conv_node(x_out)), inplace=True)
+
         return y
 
 
@@ -315,7 +310,6 @@ class FaceModel(torch.nn.Module):
                                         )
         self.input_bnm = nn.ModuleList([nn.BatchNorm2d(self.first_channels_size[i])
                                         for i in range(self.recurrent_number)])
-
         # interlink_layer0 interlink_layer1 interlink_layer2
 
         self.interlink_layers = nn.ModuleList([iCNN_Cell(recurrent_number=self.recurrent_number,
