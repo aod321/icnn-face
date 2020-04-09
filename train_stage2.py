@@ -361,8 +361,8 @@ def start_train():
     for x in model_name_list:
         print("Train %s patch Now" % x)
         for epoch in range(args.epochs):
-            # train[x].scheduler.step()
             train[x].train()
+            train[x].scheduler.step()
             if (epoch + 1) % args.eval_per_epoch == 0:
                 train[x].eval()
 

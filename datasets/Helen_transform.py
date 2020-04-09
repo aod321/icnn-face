@@ -13,6 +13,7 @@ class Resize(transforms.Resize):
     """Resize the input PIL Image to the given size.
              Override the __call__ of transforms.Resize
     """
+
     def __call__(self, sample):
         """
             Args:
@@ -42,6 +43,7 @@ class ToPILImage(object):
     """Convert a  ``numpy.ndarray`` to ``PIL Image``
 
     """
+
     def __call__(self, sample):
         """
                 Args:
@@ -62,10 +64,12 @@ class ToPILImage(object):
                 'index': sample['index']
                 }
 
+
 class Stage2_ToPILImage(object):
     """Convert a  ``numpy.ndarray`` to ``PIL Image``
 
     """
+
     def __call__(self, sample):
         """
                 Args:
@@ -84,6 +88,7 @@ class Stage2_ToPILImage(object):
                 'labels': labels,
                 'index': sample['index']
                 }
+
 
 class ToTensor(transforms.ToTensor):
     """Convert a ``PIL Image`` or ``numpy.ndarray`` to tensor.
@@ -112,9 +117,6 @@ class ToTensor(transforms.ToTensor):
                   for r in range(len(labels))
                   ]
         labels = torch.cat(labels, dim=0).float()
-
-        np_lb = labels.detach().cpu().numpy()
-
         return {'image': TF.to_tensor(image),
                 'labels': labels,
                 'index': sample['index']
@@ -201,16 +203,16 @@ class RandomRotation(transforms.RandomRotation):
         angle = self.get_params(self.degrees)
 
         img, labels = sample['image'], sample['labels']
-
-        rotated_img = TF.rotate(img, angle, self.resample, self.expand, self.center)
-        rotated_labels = [TF.rotate(labels[r], angle, self.resample, self.expand, self.center)
+        # img, angle, resample=False, expand=False, center=None, fill=0
+        rotated_img = TF.rotate(img, angle)
+        rotated_labels = [TF.rotate(labels[r], angle)
                           for r in range(len(labels))
                           ]
 
-        sample ={'image': rotated_img,
-                 'labels': rotated_labels,
-                 'index': sample['index']
-                 }
+        sample = {'image': rotated_img,
+                  'labels': rotated_labels,
+                  'index': sample['index']
+                  }
 
         return sample
 
@@ -306,6 +308,7 @@ class LabelsToOneHot(object):
     """
         LabelsToOneHot
     """
+
     def __call__(self, sample):
         """
         Args:
@@ -354,7 +357,6 @@ class RandomAffine(transforms.RandomAffine):
 
 class GaussianNoise(object):
     def __call__(self, sample):
-
         img, labels = sample['image'], sample['labels']
         img = np.array(img, np.uint8)
         img = random_noise(img)
@@ -370,7 +372,6 @@ class GaussianNoise(object):
 class Blurfilter(object):
     # img: PIL image
     def __call__(self, sample):
-
         img, labels = sample['image'], sample['labels']
         img = img.filter(ImageFilter.BLUR)
         sample = {'image': img,

@@ -4,7 +4,6 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from models.model_1 import FaceModel
-# from es_model import ICNN
 from torch.utils.data import DataLoader
 from datasets.dataset import HelenDataset
 from datasets.Helen_transform import Resize, ToPILImage, ToTensor, Normalize, RandomRotation, \
@@ -42,7 +41,7 @@ transforms_list = {
             # RandomResizedCrop((64, 64), scale=(0.9, 1.1)),
             # CenterCrop((512,512)),
             Resize((64, 64)),
-            LabelsToOneHot(),
+            # LabelsToOneHot(),
             ToTensor()
             # Normalize()
         ]),
@@ -50,7 +49,7 @@ transforms_list = {
         transforms.Compose([
             ToPILImage(),
             Resize((64, 64)),
-            LabelsToOneHot(),
+            # LabelsToOneHot(),
             ToTensor()
             # Normalize()
         ])
@@ -105,7 +104,7 @@ class TrainModel(TemplateModel):
         self.check_init()
 
     def train_loss(self, batch):
-        x, y = batch['image'].float().to(self.device), batch['labels'].float().to(self.device)
+        x, y = batch['image'].to(self.device), batch['labels'].to(self.device)
 
         pred = self.model(x)
         # loss = self.criterion(pred, y)
@@ -130,8 +129,8 @@ def start_train():
     train = TrainModel(args)
 
     for epoch in range(args.epochs):
-        train.scheduler.step()
         train.train()
+        train.scheduler.step()
         if (epoch + 1) % args.eval_per_epoch == 0:
             train.eval()
 
