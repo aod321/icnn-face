@@ -160,7 +160,7 @@ class StageTwoTrain(TemplateModel):
         for batch in self.eval_loader:
             x, y = batch['image'].float().to(self.device), batch['labels'].float().to(self.device)
             pred = self.model(x)
-            accu = self.metric(pred, y)
+            accu = self.metric(pred, y.argmax(dim=1, keepdim=False))
             # error = self.criterion(pred, y.argmax(dim=1, keepdim=False))
 
             accu_list.append(accu)

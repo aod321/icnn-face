@@ -165,6 +165,8 @@ class F1Accuracy(torch.nn.CrossEntropyLoss):
         # labels = torch.argmax(target, dim=1, keepdim=False)
         labels = target
         for i in range(input.shape[1]):
+            print(labels.shape)
+            print(predict.shape)
             self.TP += ((predict == i) * (labels == i)).sum().tolist()
             self.TN += ((predict != i) * (labels != i)).sum().tolist()
             self.FP += ((predict == i) * (labels != i)).sum().tolist()
