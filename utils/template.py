@@ -1,7 +1,7 @@
 import torch
 import os
 import os.path as osp
-
+from tqdm import tqdm
 
 class TemplateModel():
 
@@ -83,7 +83,7 @@ class TemplateModel():
     def train(self):
         self.model.train()
         self.epoch += 1
-        for batch in self.train_loader:
+        for batch in tqdm(self.train_loader):
             self.step += 1
             self.optimizer.zero_grad()
 
@@ -124,7 +124,7 @@ class TemplateModel():
 
     def eval_error(self):
         xs, ys, preds = [], [], []
-        for batch in self.eval_loader:
+        for batch in tqdm(self.eval_loader):
             x, y = batch
             x = x.to(self.device)
             y = y.to(self.device)

@@ -18,7 +18,7 @@ model_name_list = ['eyebrows', 'eyes', 'nose', 'mouth']
 root_dir = '/home/yinzi/Downloads/datas'
 # root_dir_2 = "/data1/yinzi/facial_parts"
 root_dir_2 = "/home/yinzi/data/facial_parts"
-state_file_root = "/home/yinzi/test_model_7/"
+state_file_root = "/home/yinzi/data3/test_model_5/"
 state_file_1 = os.path.join(state_file_root,
                             "stage1.pth.tar")
 state_file_2 = {x: os.path.join(state_file_root,
@@ -289,7 +289,7 @@ class TwoStepTest(object):
             plt.title(title)
         plt.savefig(os.path.join(save_dir, '{}.png'.format(uuid_str)))
 
-    def extract_labels(self,):
+    # def extract_labels(self,):
 
     def extract_batch_image(self, cens, img):
         # Centroids Shape(N, 9, 2)   Input image Shape(N, 3, H, W)
