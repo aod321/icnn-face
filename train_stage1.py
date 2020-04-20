@@ -138,6 +138,24 @@ class TrainModel(TemplateModel):
 
 
 class TrainModel_accu(TrainModel):
+    def train(self):
+        self.model.train()
+        self.epoch += 1
+        for batch in tqdm(self.train_loader):
+            self.step += 1
+            self.optimizer.zero_grad()
+
+            loss, others = self.train_loss(batch)
+
+            loss.backward()
+            self.optimizer.step()
+
+            if self.step % self.display_freq == 0:
+                self.writer.add_scalar('loss', loss.item(), self.step)
+                print('epoch {}\tstep {}\tloss {:.3}'.format(self.epoch, self.step, loss.item()))
+                if self.train_logger:
+                    self.train_logger(self.writer, others)
+
     def eval(self):
         self.model.eval()
         accu, mean_error = self.eval_accu()
