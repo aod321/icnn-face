@@ -181,18 +181,13 @@ class StageTwoTrain(TemplateModel):
 
         mean_error = np.mean(loss_list)
         hist_sum = np.sum(np.stack(hist_list, axis=0), axis=0)
-        A = hist_sum[1, :].sum()
-        B = hist_sum[:, 1].sum()
-        inter_select = hist_sum[1, 1]
-        F1 = 2 * inter_select / (A + B)
+        A = hist_sum[1:self.label_channels, :].sum()
+        B = hist_sum[:, 1:self.label_channels].sum()
+        intersected = hist_sum[1:self.label_channels, :][:, 1:self.label_channels].sum()
+        F1 = 2 * intersected / (A + B)
         return F1, mean_error
 
     def fast_histogram(self, a, b, na, nb):
-        '''
-        fast histogram calculation
-        ---
-        * a, b: non negative label ids, a.shape == b.shape, a in [0, ... na-1], b in [0, ..., nb-1]
-        '''
         assert a.shape == b.shape
         assert np.all((a >= 0) & (a < na) & (b >= 0) & (b < nb))
         # k = (a >= 0) & (a < na) & (b >= 0) & (b < nb)

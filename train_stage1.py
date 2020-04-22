@@ -18,9 +18,9 @@ from datasets.dataset import Stage1Augmentation
 import os
 import uuid as uid
 from tqdm import tqdm
+
 uuid = str(uid.uuid1())[0:8]
 print(uuid)
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--cuda", default=9, type=int, help="Choose which GPU")
@@ -41,9 +41,11 @@ txt_file_names = {
     'val': "tuning.txt"
 }
 
+
 class DataLoaderX(DataLoader):
     def __iter__(self):
         return BackgroundGenerator(super().__iter__())
+
 
 transforms_list = {
     'train':
@@ -74,7 +76,7 @@ stage1_augmentation = Stage1Augmentation(dataset=HelenDataset,
                                          )
 enhaced_stage1_datasets = stage1_augmentation.get_dataset()
 stage1_dataloaders = {x: DataLoaderX(enhaced_stage1_datasets[x], batch_size=args.batch_size,
-                                    shuffle=True, num_workers=4)
+                                     shuffle=True, num_workers=4)
                       for x in ['train', 'val']}
 
 stage1_dataset_sizes = {x: len(enhaced_stage1_datasets[x]) for x in ['train', 'val']}
@@ -139,6 +141,7 @@ class TrainModel(TemplateModel):
 
 class TrainModel_accu(TrainModel):
     def train(self):
+        self.eval()
         self.model.train()
         self.epoch += 1
         for batch in tqdm(self.train_loader):
@@ -178,7 +181,7 @@ class TrainModel_accu(TrainModel):
             pred = self.model(image)
             gt = y.argmax(dim=1, keepdim=False)
             pred_arg = torch.softmax(pred, dim=1).argmax(dim=1, keepdim=False)
-            loss_list.append(self.criterion(pred,  gt).item())
+            loss_list.append(self.criterion(pred, gt).item())
             # pred_arg Shape(N, 256, 256)
             hist = self.fast_histogram(pred_arg.cpu().numpy(), gt.cpu().numpy(),
                                        self.label_channels, self.label_channels)
@@ -186,10 +189,10 @@ class TrainModel_accu(TrainModel):
 
         mean_error = np.mean(loss_list)
         hist_sum = np.sum(np.stack(hist_list, axis=0), axis=0)
-        A = hist_sum[1, :].sum()
-        B = hist_sum[:, 1].sum()
-        inter_select = hist_sum[1, 1]
-        F1 = 2 * inter_select / (A + B)
+        A = hist_sum[1:8, :].sum()
+        B = hist_sum[:, 1:8].sum()
+        intersected = hist_sum[1:8, :][:, 1:8].sum()
+        F1 = 2 * intersected / (A + B)
         return F1, mean_error
 
     def fast_histogram(self, a, b, na, nb):
