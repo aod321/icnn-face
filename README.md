@@ -21,22 +21,22 @@ The network archtecture is as following:
 
 First, install dependencies
 
-# clone project   
+### clone project   
 git clone https://github.com/aod321/icnn-face
 
-# install requirements
+### install requirements
 cd icnn-face
 pip install -r requirements.txt
 
-# train stage1
+### train stage1
 python train_stage1.py
 
-# train stage2
+### train stage2
 python train_stage2.py
 
 all the checkpoints can be found at checkpoints_{uuid} or checkpoints_{parts_name}_{uuid}
 
-## Results
+### Results
 ![image.png](https://i.loli.net/2020/07/11/7uq3ZTU9aXGsfCc.png)
 
 Comparison with State-of-the-art Methods on HELEN
