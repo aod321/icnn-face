@@ -1,0 +1,10 @@
+torch >= 1.4
+torchvisoin
+matplotlib
+opencv-python
+numpy
+scikit-image
+argparse
+tensorboardX
+tqdm
+prefetch_generator
