@@ -1,5 +1,5 @@
 # Face parsing via Interlinked Convolutional Neural Network(Pytorch reimplement) 
-[![Paper](https://arxiv.org/abs/1806.02479)
+[Paper](https://arxiv.org/abs/1806.02479)
 
 
 ## Description   
@@ -10,7 +10,7 @@ The network archtecture is as following:
 ![image.png](https://i.loli.net/2020/07/11/uysz8nKw3VTAEpe.png)
 
 ## Pretrained model
-![Stage1+Stage2](https://github.com/aod321/icnn-face/blob/master/utils/test_model_5.zip?raw=true)
+[Stage1+Stage2](https://github.com/aod321/icnn-face/blob/master/utils/test_model_5.zip?raw=true)
    
 ## Prepare datasets
 ### Stage1 Dataset
