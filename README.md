@@ -1,13 +1,6 @@
-# Face parsing via Interlinked Convolutional Neural Network(Pytorch reimplement)
+# Face parsing via Interlinked Convolutional Neural Network(Pytorch reimplement) 
+[![Paper](https://arxiv.org/abs/1806.02479)
 
----   
-<div align="center">    
- 
-# Face Parsing via iCNN
-
-[![Paper](ttps://arxiv.org/abs/1806.02479)
-</div>
----
 
 ## Description   
 This is a pytorch implementation of Zhou et al [(2015)](https://arxiv.org/abs/1806.02479).
@@ -16,10 +9,20 @@ NOTICE: We have released a upgraded version of iCNN naming STN-iCNN, check the [
 The network archtecture is as following:
 ![image.png](https://i.loli.net/2020/07/11/uysz8nKw3VTAEpe.png)
 
+## Pretrained model
+![Stage1+Stage2](https://github.com/aod321/icnn-face/blob/master/utils/test_model_5.zip?raw=true)
+   
+## Prepare datasets
+### Stage1 Dataset
+    1. ![Download](http://pages.cs.wisc.edu/~lizhang/projects/face-parsing/SmithCVPR2013_dataset_resized.zip) Smith et al. Resized HelenDataset 
+    2. Unzip it into ./datas/helen/
+### Stage2 Dataset
+    1. python3 ./utils/extract_parts.py
 
+## Visual Test
+ Run Jupyter Notebook: visual_test.ipynb
+    
 ## How to run
-
-First, install dependencies
 
 ### clone project   
 git clone https://github.com/aod321/icnn-face
