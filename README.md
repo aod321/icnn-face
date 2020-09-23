@@ -10,7 +10,7 @@ The network archtecture is as following:
 ![image.png](https://i.loli.net/2020/07/11/uysz8nKw3VTAEpe.png)
 
 ## Pretrained model
-[Stage1+Stage2](https://github.com/aod321/icnn-face/blob/master/utils/test_model_5.zip?raw=true)
+[Stage1+Stage2](https://github.com/aod321/icnn-face/blob/master/utils/test_model_5.tar.gz?raw=true)
    
 ## Prepare datasets
 ### Stage1 Dataset
